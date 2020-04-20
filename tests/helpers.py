@@ -636,7 +636,7 @@ def validate_cephfilesystem(fs_name):
     return True if (ceph_validate and ocp_validate) else False
 
 
-def get_all_storageclass_names(all_ns=False):
+def get_all_storageclass_names():
     """
     Function for getting all storageclass
 
@@ -647,7 +647,7 @@ def get_all_storageclass_names(all_ns=False):
         kind=constants.STORAGECLASS,
         namespace=defaults.ROOK_CLUSTER_NAMESPACE
     )
-    result = sc_obj.get(all_namespaces=all_ns)
+    result = sc_obj.get()
     sample = result['items']
 
     storageclass = [

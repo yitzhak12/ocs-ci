@@ -12,7 +12,7 @@ from copy import deepcopy
 
 from ocs_ci.deployment.ocp import OCPDeployment as BaseOCPDeployment
 from ocs_ci.framework import config
-from ocs_ci.ocs import constants, ocp, defaults, registry, openshift_ops
+from ocs_ci.ocs import constants, ocp, defaults, registry
 from ocs_ci.ocs.cluster import validate_cluster_on_pvc, validate_pdb_creation
 from ocs_ci.ocs.exceptions import (
     CommandFailed, UnavailableResourceException, UnsupportedPlatformError
@@ -35,7 +35,8 @@ from ocs_ci.ocs.resources.pod import (
     get_all_pods,
     validate_pods_are_respinned_and_running_state,
     get_pvc_name)
-from ocs_ci.ocs.resources.pvc import delete_pvcs, get_all_pvcs
+from ocs_ci.ocs.resources.pvc import get_all_pvcs
+from ocs_ci.ocs.resources.storage_cluster import get_all_storageclass
 from ocs_ci.ocs.utils import (
     setup_ceph_toolbox, collect_ocs_logs
 )
@@ -50,7 +51,6 @@ from ocs_ci.utility.utils import (
     run_cmd,
 )
 from tests import helpers
-from tests.helpers import delete_storageclasses, get_all_storageclass_names
 
 logger = logging.getLogger(__name__)
 
@@ -650,17 +650,20 @@ class Deployment(object):
             )
 
     def uninstall_osc(self):
+        """
+        The function Uninstalls the OCS operator from a openshift
+        cluster and removes all its settings and dependencies
+
+
+        :return: True if operation was successful
+        """
         ocp_obj = ocp.OCP()
-        provisioners = ['openshift-storage.rbd.csi.ceph.com',
-                        'openshift-storage.cephfs.csi.ceph.com',
-                        'openshift-storage.noobaa.io/obc']
+        provisioners = constants.OCS_PROVISIONERS
 
         # STEP 1:List the storage classes
-        sc_list = get_all_storageclass_names(all_ns=True)
+        sc_list = get_all_storageclass(all_ns=True)
         for storage_class in sc_list:
-            sc = ocp.OCP(kind=constants.STORAGECLASS, resource_name=storage_class)
-            pro = sc.get('provisioner')
-            if pro != provisioners[0] and pro != provisioners[1] and pro != provisioners[2]:
+            if storage_class.get('provisioner') in provisioners:
                 sc_list.remove(storage_class)
 
         # STEP 2: Query for PVCs and OBCs that are using the storage class provisioners listed in the previous step.
@@ -673,23 +676,25 @@ class Deployment(object):
                     break
 
         # Removing monitoring stack from OpenShift Container Storage (edit config map with patch) # TODO
-        monitoring_obj = ocp.OCP(namespace=constants.MONITORING_NAMESPACE, kind='configmap')
+        monitoring_obj = ocp.OCP(namespace=constants.MONITORING_NAMESPACE,
+                                 kind='configmap',
+                                 resource_name='cluster-monitoring-config')
         monitoring_list = monitoring_obj.get('data').get('config.yaml')
         for item in monitoring_list:
-            if item.get().get('volumeClaimTemplate').get('spec').get('storageClassName') in pvcs_to_delete:
-                item #TODO
-        monitoring_obj.patch(resource_name='cluster-monitoring-config', params='')
+            if item.get().get('volumeClaimTemplate').get('spec').get('storageClassName') in sc_list:
+                monitoring_list.remove(item)
+        monitoring_obj.patch(resource_name='cluster-monitoring-config',
+                             params=f'{{"data": {{"config.yaml": {monitoring_list}}}}}')
 
         # Removing OpenShift Container Platform registry from OpenShift Container Storage
-        # Edit the configs.imageregistry.operator.openshift.io object and remove the content in the storage section.
-        ir_obj = ocp.OCP(namespace=constants.OPENSHIFT_IMAGE_REGISTRY_NAMESPACE)
+        image_registry_obj = ocp.OCP(namespace=constants.OPENSHIFT_IMAGE_REGISTRY_NAMESPACE)
         if self.platform == constants.AWS_PLATFORM:
-            ir_obj.patch(resource_name='configs.imageregistry.operator.openshift.io',
-                         params=" '{\"spec\":{\"storage\":{}}}' ")
+            image_registry_obj.patch(resource_name='configs.imageregistry.operator.openshift.io',
+                                     params=" '{\"spec\":{\"storage\":{}}}' ")
 
         elif self.platform == constants.VSPHERE_PLATFORM:
-            ir_obj.patch(resource_name='configs.imageregistry.operator.openshift.io',
-                         params=" '{\"spec\":{\"storage\":{\"emptyDir\":{}}}}' ")
+            image_registry_obj.patch(resource_name='configs.imageregistry.operator.openshift.io',
+                                     params=" '{\"spec\":{\"storage\":{\"emptyDir\":{}}}}' ")
 
         # Removing the cluster logging operator from OpenShift Container Storage
         # Remove the ClusterLogging instance in the namespace.
@@ -706,18 +711,15 @@ class Deployment(object):
         # STEP 3.2: Delete the PVCs.
         for pvc in pvc_list:
             pvc.delete()
+            ocp_obj.wait_for_delete(pvc.name)
 
         # STEP 4: Delete the StorageCluster object.
         storage_cluster = ocp.OCP(kind=constants.STORAGECLUSTER, resource_name="ocs-storagecluster")
         storage_cluster.delete()
 
         # STEP 5: Delete the namespaces and wait till the deletion is complete.
-        oc = openshift_ops.OCP()
-        project_list = oc.get_projects()
-        for project in project_list:
-            if "test" in project.get('metadata').get('name'):
-                ocp_obj.delete_project(project.get('metadata').get('name'))
         ocp_obj.delete_project('openshift-storge')
+        ocp_obj.wait_for_delete("openshift-storage")
 
         # STEP 6: List the storage nodes.
         nodes_list = get_labeled_nodes('cluster.ocs.openshift.io/openshift-storage')
@@ -727,7 +729,8 @@ class Deployment(object):
             ocp_obj.exec_oc_debug_cmd(node=node, cmd_list=["rm -rf /var/lib/rook"])
 
         # STEP 8: Delete the storage classes with an openshift-storage provisioner listed in step 1.
-        delete_storageclasses(sc_list)
+        for storage_class in sc_list:
+            storage_class.delete()
 
         # STEP 9: Remove the taint from the storage nodes.NOT SUPPORTED YET
         """ ocp_obj.exec_oc_cmd("adm taint nodes --all node.ocs.openshift.io/storage-") """
@@ -748,10 +751,6 @@ class Deployment(object):
                             "storageclusters.ocs.openshift.io  --wait=true --timeout=5m"
                             )
 
-        # STEP 12: To make sure that OpenShift Container Storage is uninstalled, verify that the openshift-storage
-        # namespace no longer exists REALLY NECESSARY?
-        if not ocp_obj.wait_for_delete("openshift-storage"):
-            return False
 
 def create_catalog_source(image=None, ignore_upgrade=False):
     """

@@ -110,6 +110,7 @@ CLUSTER_SERVICE_VERSION = 'csv'
 
 # Other
 SECRET = "Secret"
+TEST = "test"
 NAMESPACE = 'Namespace'
 IGNORE_SC_GP2 = "gp2"
 IGNORE_SC_FLEX = "rook-ceph-block"
@@ -747,3 +748,8 @@ LOCAL_VOLUME_YAML = os.path.join(
 
 # All worker default config files
 RHEL_WORKERS_CONF = os.path.join(CONF_DIR, 'ocsci/aws_upi_rhel_workers.yaml')
+
+# Storage classes provisioners
+OCS_PROVISIONERS = ['openshift-storage.rbd.csi.ceph.com',
+                        'openshift-storage.cephfs.csi.ceph.com',
+                        'openshift-storage.noobaa.io/obc']
