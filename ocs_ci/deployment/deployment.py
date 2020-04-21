@@ -658,6 +658,7 @@ class Deployment(object):
 
         Returns
             Boolean: True if operation was successful
+
         """
         ocp_obj = ocp.OCP()
         provisioners = constants.OCS_PROVISIONERS
@@ -677,7 +678,7 @@ class Deployment(object):
                     pvcs_to_delete.append(pvc)
                     break
 
-        # Removing monitoring stack from OpenShift Container Storage (edit config map with patch) # TODO
+        # Removing monitoring stack from OpenShift Container Storage (edit config map with patch)
         monitoring_obj = ocp.OCP(namespace=constants.MONITORING_NAMESPACE,
                                  kind='configmap',
                                  resource_name='cluster-monitoring-config')
