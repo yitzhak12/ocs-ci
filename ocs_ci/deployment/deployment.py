@@ -34,7 +34,8 @@ from ocs_ci.ocs.resources.packagemanifest import (
 from ocs_ci.ocs.resources.pod import (
     get_all_pods,
     validate_pods_are_respinned_and_running_state,
-    get_pvc_name)
+    get_pvc_name
+)
 from ocs_ci.ocs.resources.pvc import get_all_pvcs
 from ocs_ci.ocs.resources.storage_cluster import get_all_storageclass
 from ocs_ci.ocs.utils import (
@@ -649,13 +650,14 @@ class Deployment(object):
                 f"--request-timeout=120s"
             )
 
-    def uninstall_osc(self):
+    def uninstall_ocs(self):
         """
         The function Uninstalls the OCS operator from a openshift
         cluster and removes all its settings and dependencies
 
 
-        :return: True if operation was successful
+        Returns
+            Boolean: True if operation was successful
         """
         ocp_obj = ocp.OCP()
         provisioners = constants.OCS_PROVISIONERS

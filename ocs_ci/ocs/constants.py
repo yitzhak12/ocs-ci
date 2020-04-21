@@ -751,5 +751,5 @@ RHEL_WORKERS_CONF = os.path.join(CONF_DIR, 'ocsci/aws_upi_rhel_workers.yaml')
 
 # Storage classes provisioners
 OCS_PROVISIONERS = ['openshift-storage.rbd.csi.ceph.com',
-                        'openshift-storage.cephfs.csi.ceph.com',
-                        'openshift-storage.noobaa.io/obc']
+                    'openshift-storage.cephfs.csi.ceph.com',
+                    'openshift-storage.noobaa.io/obc']
