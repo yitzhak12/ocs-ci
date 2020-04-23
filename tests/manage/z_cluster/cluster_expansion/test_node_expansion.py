@@ -5,7 +5,7 @@ from ocs_ci.utility.utils import TimeoutSampler
 from tests import helpers
 from ocs_ci.framework.testlib import tier1, ignore_leftovers, ManageTest
 from ocs_ci.ocs import machine as machine_utils
-from ocs_ci.ocs import constants
+from ocs_ci.ocs import constants, ocp
 from ocs_ci.ocs.node import wait_for_nodes_status
 from ocs_ci.framework import config
 
@@ -25,6 +25,8 @@ class TestAddNode(ManageTest):
         """
         dt = config.ENV_DATA['deployment_type']
         if dt == 'ipi':
+            initial_nodes = helpers.get_worker_nodes()
+
             before_replica_counts = dict()
             machines = machine_utils.get_machinesets()
             for machine in machines:
@@ -56,6 +58,19 @@ class TestAddNode(ManageTest):
                 node_names=helpers.get_worker_nodes(),
                 status=constants.NODE_READY
             )
+            all_nodes = helpers.get_worker_nodes()
+
+            new_spun_nodes = list(
+                set(all_nodes) - set(initial_nodes)
+            )
+            logging.info('labeling:')
+            node_obj = ocp.OCP(kind='node')
+            for new_node in new_spun_nodes:
+                node_obj.add_label(
+                    resource_name=new_node,
+                    label=constants.OPERATOR_NODE_LABEL
+                )
+
         else:
             pytest.skip("UPI not yet supported")
         # ToDo run IOs
