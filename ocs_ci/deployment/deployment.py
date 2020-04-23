@@ -743,14 +743,15 @@ class Deployment(object):
             ocp_obj.add_label(resource_name=node, label='topology.rook.io/rack-')
 
         # Remove CustomResourceDefinitions.
-        ocp_obj.exec_oc_cmd("delete crd backingstores.noobaa.io bucketclasses.noobaa.io"
-                            " cephblockpools.ceph.rook.io cephclusters.ceph.rook.io "
-                            "cephfilesystems.ceph.rook.io cephnfses.ceph.rook.io "
-                            "cephobjectstores.ceph.rook.io cephobjectstoreusers.ceph.rook.io "
-                            "noobaas.noobaa.io ocsinitializations.ocs.openshift.io  "
-                            "storageclusterinitializations.ocs.openshift.io "
-                            "storageclusters.ocs.openshift.io  --wait=true --timeout=5m"
-                            )
+        ocp_obj.exec_oc_cmd(
+            "delete crd backingstores.noobaa.io bucketclasses.noobaa.io"
+            " cephblockpools.ceph.rook.io cephclusters.ceph.rook.io "
+            "cephfilesystems.ceph.rook.io cephnfses.ceph.rook.io "
+            "cephobjectstores.ceph.rook.io cephobjectstoreusers.ceph.rook.io "
+            "noobaas.noobaa.io ocsinitializations.ocs.openshift.io  "
+            "storageclusterinitializations.ocs.openshift.io "
+            "storageclusters.ocs.openshift.io  --wait=true --timeout=5m"
+         )
 
 
 def create_catalog_source(image=None, ignore_upgrade=False):
