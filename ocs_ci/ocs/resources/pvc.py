@@ -8,6 +8,7 @@ from ocs_ci.ocs import constants
 from ocs_ci.ocs.ocp import OCP
 from ocs_ci.ocs.resources.ocs import OCS
 from ocs_ci.framework import config
+from ocs_ci.ocs.resources.pod import get_all_pods, get_pvc_name
 from ocs_ci.utility.utils import run_cmd
 
 log = logging.getLogger(__name__)
@@ -140,6 +141,21 @@ class PVC(OCS):
             return self.size == new_size
         return True
 
+    def get_attached_pods(self):
+        """
+        Get the pods attached to this PVC
+
+        Returns:
+                list: A list of pod objects attached to the PVC
+        """
+        attached_pods = []
+        all_pods = get_all_pods()
+        for pod in all_pods:
+            pvc = get_pvc_name(pod)
+            if pvc == self.name:
+                attached_pods.append(pod)
+        return attached_pods
+
 
 def delete_pvcs(pvc_objs, concurrent=False):
     """
@@ -168,7 +184,7 @@ def get_all_pvcs(namespace=None, selector=None):
     Gets all pvc in given namespace
 
     Args:
-        namespace (str): Name of namespace
+        namespace (str): Name of namespace ('all-namespaces' to get all namespaces)
         selector (str): The label selector to look for
 
     Returns:

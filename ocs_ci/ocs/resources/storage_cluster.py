@@ -430,12 +430,12 @@ def get_deviceset_count():
     sc = get_storage_cluster()
     return int(sc.get().get('items')[0].get('spec').get(
         'storageDeviceSets')[0].get('count')
-               )
+    )
 
 
-def get_all_storageclass(all_ns=False):
+def get_all_storageclass():
     """
-    Function for getting all storageclass
+    Function for getting all storageclass excluding 'gp2' and 'flex'
 
     Returns:
          list: list of storageclass
@@ -444,7 +444,7 @@ def get_all_storageclass(all_ns=False):
         kind=constants.STORAGECLASS,
         namespace=defaults.ROOK_CLUSTER_NAMESPACE
     )
-    result = sc_obj.get(all_namespaces=all_ns)
+    result = sc_obj.get()
     sample = result['items']
 
     storageclass = [
