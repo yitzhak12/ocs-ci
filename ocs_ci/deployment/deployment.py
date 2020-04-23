@@ -676,9 +676,10 @@ class Deployment(object):
                     break
 
         # Removing monitoring stack from OpenShift Container Storage
-        monitoring_obj = ocp.OCP(namespace=constants.MONITORING_NAMESPACE,
-                                 kind='configmap',
-                                 resource_name='cluster-monitoring-config')
+        monitoring_obj = ocp.OCP(
+            namespace=constants.MONITORING_NAMESPACE, kind='configmap',
+            resource_name='cluster-monitoring-config'
+        )
         monitoring_list = monitoring_obj.get('data').get('config.yaml')
         for item in monitoring_list:
             if item.get().get('volumeClaimTemplate').get('spec').get('storageClassName') in sc_list:
