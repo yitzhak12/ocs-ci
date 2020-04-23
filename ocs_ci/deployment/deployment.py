@@ -695,8 +695,10 @@ class Deployment(object):
                                      params=" '{\"spec\":{\"storage\":{}}}' ")
 
         elif self.platform == constants.VSPHERE_PLATFORM:
-            image_registry_obj.patch(resource_name='configs.imageregistry.operator.openshift.io',
-                                     params=" '{\"spec\":{\"storage\":{\"emptyDir\":{}}}}' ")
+            image_registry_obj.patch(
+                resource_name='configs.imageregistry.operator.openshift.io',
+                params=" '{\"spec\":{\"storage\":{\"emptyDir\":{}}}}' "
+            )
 
         # Removing the cluster logging operator from OpenShift Container Storage
         ocp_obj.exec_oc_cmd("delete clusterlogging instance -n openshift-logging --wait=true --timeout=5m")
