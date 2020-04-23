@@ -689,10 +689,14 @@ class Deployment(object):
                              params=f'{{"data": {{"config.yaml": {monitoring_list}}}}}')
 
         # Removing OpenShift Container Platform registry from OpenShift Container Storage
-        image_registry_obj = ocp.OCP(namespace=constants.OPENSHIFT_IMAGE_REGISTRY_NAMESPACE)
+        image_registry_obj = ocp.OCP(
+            namespace=constants.OPENSHIFT_IMAGE_REGISTRY_NAMESPACE
+        )
         if self.platform == constants.AWS_PLATFORM:
-            image_registry_obj.patch(resource_name='configs.imageregistry.operator.openshift.io',
-                                     params=" '{\"spec\":{\"storage\":{}}}' ")
+            image_registry_obj.patch(
+                resource_name='configs.imageregistry.operator.openshift.io', 
+                params=" '{\"spec\":{\"storage\":{}}}' "
+            )
 
         elif self.platform == constants.VSPHERE_PLATFORM:
             image_registry_obj.patch(
