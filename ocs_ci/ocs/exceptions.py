@@ -334,3 +334,7 @@ class IPAMReleaseUpdateFailed(Exception):
 
 class IPAMAssignUpdateFailed(Exception):
     pass
+
+
+class PVNotSufficientException(Exception):
+    pass
