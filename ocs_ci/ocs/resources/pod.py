@@ -2912,9 +2912,17 @@ def delete_osd_removal_job(osd_id=None):
     else:
         job_name = f"ocs-osd-removal-{osd_id}"
 
-    osd_removal_job = get_job_obj(
-        job_name, namespace=config.ENV_DATA["cluster_namespace"]
-    )
+    try:
+        osd_removal_job = get_job_obj(
+            job_name, namespace=config.ENV_DATA["cluster_namespace"]
+        )
+    except CommandFailed as ex:
+        if "NotFound" in str(ex):
+            logger.info(f"Didn't find the job {job_name}")
+            return True
+        else:
+            raise ex
+
     osd_removal_job.delete()
     try:
         osd_removal_job.ocp.wait_for_delete(resource_name=job_name)

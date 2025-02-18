@@ -72,6 +72,8 @@ class Sanity:
         rgw_bucket_factory,
         run_io=True,
         bucket_creation_timeout=180,
+        rbd_storage_class=None,
+        cephfs_storage_class=None,
     ):
         """
         Sanity validation: Create resources - pods, OBCs (RGW and MCG), PVCs (FS and RBD) and run IO
@@ -83,14 +85,24 @@ class Sanity:
             rgw_bucket_factory (function): A call to rgw_bucket_factory function
             run_io (bool): True for run IO, False otherwise
             bucket_creation_timeout (int): Time to wait for the bucket object creation.
+            rbd_storage_class (OCS): The rbd storageclass instance to use when creating the resources.
+            cephfs_storage_class (OCS): The cephfs storageclass instance to use when creating the resources.
 
         """
         logger.info(
             "Creating resources and running IO as a sanity functional validation"
         )
+        interface_per_sc = {
+            constants.CEPHBLOCKPOOL: rbd_storage_class,
+            constants.CEPHFILESYSTEM: cephfs_storage_class,
+        }
 
         for interface in [constants.CEPHBLOCKPOOL, constants.CEPHFILESYSTEM]:
-            pvc_obj = pvc_factory(interface)
+            sc = interface_per_sc.get(interface)
+            if sc:
+                pvc_obj = pvc_factory(interface, storageclass=sc)
+            else:
+                pvc_obj = pvc_factory(interface)
             self.pvc_objs.append(pvc_obj)
             self.pod_objs.append(pod_factory(pvc=pvc_obj, interface=interface))
         if run_io:

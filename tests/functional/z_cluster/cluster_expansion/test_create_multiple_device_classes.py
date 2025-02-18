@@ -128,3 +128,14 @@ class TestMultipleDeviceClasses(ManageTest):
         self.sanity_helpers.create_resources(
             pvc_factory, pod_factory, bucket_factory, rgw_bucket_factory
         )
+        log.info(
+            "Check basic cluster functionality by creating some resources "
+            "with the new rbd storageclass"
+        )
+        self.sanity_helpers.create_resources(
+            pvc_factory,
+            pod_factory,
+            bucket_factory,
+            rgw_bucket_factory,
+            rbd_storage_class=sc_obj,
+        )
