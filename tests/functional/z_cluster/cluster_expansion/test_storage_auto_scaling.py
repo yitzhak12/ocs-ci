@@ -18,6 +18,7 @@ from ocs_ci.framework.testlib import (
     ignore_leftovers,
     ManageTest,
     tier1,
+    tier4a,
 )
 from ocs_ci.helpers.helpers import create_auto_scaler
 from ocs_ci.ocs import constants
@@ -48,6 +49,7 @@ from ocs_ci.utility.utils import (
     get_pytest_fixture_value,
     sum_of_two_storage_sizes,
 )
+from ocs_ci.ocs.cluster import wait_for_percent_used_capacity_reached
 
 
 logger = logging.getLogger(__name__)
@@ -101,6 +103,7 @@ class TestStorageAutoscaler(ManageTest):
         )
         check_resize_osd_pre_conditions(self.new_storage_size)
         self.create_pvcs_and_pods = create_pvcs_and_pods
+        self.create_resources_for_integrity = False
 
         self.old_osd_pods = get_osd_pods()
         self.old_osd_pvcs = get_deviceset_pvcs()
@@ -123,17 +126,21 @@ class TestStorageAutoscaler(ManageTest):
 
         request.addfinalizer(finalizer)
 
-    def fill_up_cluster(self, target_percentage):
+    def fill_up_cluster(self, target_percentage, bs="4096KiB", is_completed=True):
         """
         Fill up the cluster to {target_percentage}% of it's storage capacity
 
         Args:
             target_percentage (int): The target percentage of cluster storage usage to reach.
+            bs (str): the Block size that need to used for the prefill.
+            is_completed (bool): if True, verify the benchmark operator moved to completed state.
         """
         logger.info(
             f"Fill up the cluster to {target_percentage}% of it's storage capacity"
         )
-        self.benchmark_workload_storageutilization(target_percentage)
+        self.benchmark_workload_storageutilization(
+            target_percentage, bs=bs, is_completed=is_completed
+        )
 
     def run_io_on_pods(self, pods, size="1G", runtime=30):
         """
@@ -200,6 +207,29 @@ class TestStorageAutoscaler(ManageTest):
             )
             self.run_io_on_pods(self.pods_for_run_io, size="2G", runtime=runtime)
 
+    def verify_post_resize_osd_steps(self):
+        ceph_verification_steps_post_resize_osd(
+            self.old_osd_pods,
+            self.old_osd_pvcs,
+            self.old_osd_pvs,
+            self.new_storage_size,
+        )
+
+        if self.create_resources_for_integrity:
+            logger.info("Verifying data integrity using md5sum checks on test pods...")
+            verify_md5sum_on_pod_files(
+                self.pods_for_integrity_check, self.pod_file_name
+            )
+
+        if config.ENV_DATA.get("encryption_at_rest"):
+            logger.info(
+                "Verifying OSD-level encryption as part of post-scale checks..."
+            )
+            osd_encryption_verification()
+
+        logger.info("Validating Ceph cluster health after OSD scaling...")
+        check_ceph_health_after_resize_osd()
+
     def verify_autoscaler_post_threshold_steps(
         self, namespace=None, auto_scaler_name=None, create_additional_resources=True
     ):
@@ -236,27 +266,7 @@ class TestStorageAutoscaler(ManageTest):
             sleep=20,
         )
 
-        ceph_verification_steps_post_resize_osd(
-            self.old_osd_pods,
-            self.old_osd_pvcs,
-            self.old_osd_pvs,
-            self.new_storage_size,
-        )
-
-        if self.create_resources_for_integrity:
-            logger.info("Verifying data integrity using md5sum checks on test pods...")
-            verify_md5sum_on_pod_files(
-                self.pods_for_integrity_check, self.pod_file_name
-            )
-
-        if config.ENV_DATA.get("encryption_at_rest"):
-            logger.info(
-                "Verifying OSD-level encryption as part of post-scale checks..."
-            )
-            osd_encryption_verification()
-
-        logger.info("Validating Ceph cluster health after OSD scaling...")
-        check_ceph_health_after_resize_osd()
+        self.verify_post_resize_osd_steps()
 
         logger.info("Wait for the autoscaler to reach the 'Succeeded' status...")
         wait_for_auto_scaler_status(
@@ -303,3 +313,32 @@ class TestStorageAutoscaler(ManageTest):
         self.fill_up_cluster(scaling_threshold + 10)
 
         self.verify_autoscaler_post_threshold_steps(auto_scaler_name=auto_scaler.name)
+
+    @tier4a
+    def test_threshold_reached_during_process(self):
+        # Assign short timeout for testing timeout reached during the process
+        timeout = 60
+        scaling_threshold = generate_default_scaling_threshold()
+        # Create the StorageAutoscaler resource
+        auto_scaler = create_auto_scaler(
+            scaling_threshold=scaling_threshold, timeout=timeout
+        )
+        # Wait for the StorageAutoscaler to be ready
+        wait_for_auto_scaler_status(
+            constants.NOT_STARTED, resource_name=auto_scaler.name, timeout=60
+        )
+
+        self.fill_up_cluster(scaling_threshold + 20, is_completed=False)
+        wait_for_percent_used_capacity_reached(scaling_threshold)
+        # Wait for the StorageAutoscaler to reach the InProgress phase
+        wait_for_auto_scaler_status(
+            constants.IN_PROGRES, resource_name=auto_scaler.name, timeout=600
+        )
+        # Wait for the StorageAutoscaler to reach the Failed phase because of the short timeout
+        wait_for_auto_scaler_status(
+            constants.STATUS_FAILED, resource_name=auto_scaler.name, timeout=120
+        )
+        self.verify_post_resize_osd_steps()
+        wait_for_auto_scaler_status(
+            constants.SUCCEEDED, resource_name=auto_scaler.name, timeout=60
+        )
