@@ -6,6 +6,7 @@ from ocs_ci.framework.testlib import (
     ignore_leftovers,
     libtest,
 )
+from ocs_ci.ocs.cluster import get_percent_used_capacity
 
 log = logging.getLogger(__name__)
 
@@ -38,3 +39,24 @@ class TestBenchmarkOperator(ManageTest):
             benchmark_name=benchmark_name,
             is_completed=True,
         )
+
+    def test_benchmark_workload_storageutilization_fill_up_quickly(
+        self, benchmark_workload_storageutilization
+    ):
+        """
+        Run a benchmark with high-performance FIO settings to quickly fill up to target capacity.
+        """
+        benchmark_name = f"fio-benchmark{uuid4().hex[:4]}"
+        log.info(f"Starting benchmark {benchmark_name} with fast fill settings")
+        numjobs = 4
+
+        benchmark_workload_storageutilization(
+            target_percentage=30,
+            bs="4096KiB",
+            benchmark_name=benchmark_name,
+            is_completed=True,
+            numjobs=numjobs,
+            iodepth=64,
+        )
+        used_capacity = get_percent_used_capacity()
+        log.info(f"The current percent used capacity = {used_capacity}%")
