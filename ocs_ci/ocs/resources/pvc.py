@@ -765,3 +765,41 @@ def wait_for_pvcs_in_lvs_to_reach_status(
             f"expected status {expected_status} after {timeout} seconds"
         )
         return False
+
+
+def verify_pvc_failed_with_different_volume_mode_change(
+    pvc_obj: OCS,
+    timeout: int = 120,
+    sleep: int = 5,
+) -> bool:
+    """
+    Poll PVC events (via `oc describe`) until any expected substring appears.
+    Uses TimeoutSampler for robust polling.
+
+    Returns:
+        bool: True,
+    """
+    expected_err_messages = [
+        "allow-volume-mode-change annotation is not present",
+        "allow volume mode change annotation is not present",
+        "missing allow-volume-mode-change",
+    ]
+
+    log.info(
+        f"Waiting {timeout} seconds for any of the error messages {expected_err_messages} "
+        f"to appear the PVC {pvc_obj.name} events "
+    )
+
+    try:
+        for pvc_events in TimeoutSampler(
+            timeout=timeout, sleep=sleep, func=pvc_obj.describe
+        ):
+            is_found = any(
+                [err_message in pvc_events for err_message in expected_err_messages]
+            )
+            if is_found:
+                log.info(f"Found expected event on PVC {pvc_obj.name}")
+                return True
+    except TimeoutExpiredError:
+        log.warning(f"Didn't find the expected event on PVC {pvc_obj.name}")
+        return False
