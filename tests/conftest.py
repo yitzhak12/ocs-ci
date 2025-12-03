@@ -171,7 +171,7 @@ from ocs_ci.utility.flexy import load_cluster_info
 from ocs_ci.utility.kms import is_kms_enabled, get_ksctl_cli
 from ocs_ci.utility.prometheus import PrometheusAPI
 from ocs_ci.utility.reporting import update_live_must_gather_image
-from ocs_ci.utility.retry import retry
+from ocs_ci.utility.retry import retry, catch_exceptions
 from ocs_ci.utility.multicluster import (
     get_multicluster_upgrade_parametrizer,
     MultiClusterUpgradeParametrize,
@@ -2209,7 +2209,7 @@ def cluster(
     else:
         if ocsci_config.ENV_DATA["platform"] == constants.IBMCLOUD_PLATFORM:
             ibmcloud.set_region()
-            ibmcloud.login()
+            # ibmcloud.login()
     if "cephcluster" not in ocsci_config.RUN.keys():
         check_clusters()
     if not ocsci_config.ENV_DATA["skip_ocs_deployment"] and ocsci_config.RUN.get(
@@ -11021,3 +11021,182 @@ def keyrotation_precedence_helper():
             return KEYROTATION_SCHEDULE_ANNOTATION
 
     return KeyRotationPrecedenceHelper()
+
+
+def create_fill_pod_factory_fixture(
+    name=None,
+    block_size="1M",
+    cpu_request="100m",
+    mem_request="128Mi",
+    cpu_limit="500m",
+    mem_limit="256Mi",
+    fill_mode="zero",
+    base_yaml_path=constants.FILL_POOL_POD_YAML,
+    pvc_name=None,
+    sc_name=constants.DEFAULT_STORAGECLASS_RBD,
+    storage="50Gi",
+    pvc_base_yaml_path=constants.FILL_POOL_PVC_YAML,
+):
+    """
+    Create a Pod that fills up the cluster storage by writing data to a PVC.
+
+    Args:
+        name (str): Name of the Pod to create.
+        block_size (str): Block size for the dd command.
+        cpu_request (str): CPU request for the Pod.
+        mem_request (str): Memory request for the Pod.
+        cpu_limit (str): CPU limit for the Pod.
+        mem_limit (str): Memory limit for the Pod.
+        fill_mode (str): Mode of filling data, either 'zero' or 'random'.
+        base_yaml_path (str): Path to the base Pod YAML manifest.
+        pvc_name (str): Name of the PVC to create and attach to the Pod.
+        sc_name (str): StorageClass name for the PVC.
+        storage (str): Storage size for the PVC.
+
+    Returns:
+        tuple: The created OCS Pod and PVC objects.
+
+    """
+    name = name or create_unique_resource_name("fill-pool-pod", "pod")
+    proj_obj = helpers.create_project()
+    namespace = proj_obj.namespace
+    sc_name = sc_name or constants.DEFAULT_STORAGECLASS_RBD
+
+    if fill_mode not in ["zero", "random"]:
+        raise ValueError("fill_mode must be either 'zero' or 'random'")
+
+    input_source = "/dev/zero" if fill_mode == "zero" else "/dev/urandom"
+
+    # Load base Pod manifest
+    pod_data = templating.load_yaml(base_yaml_path)
+    # Apply overrides
+    pod_data["metadata"]["name"] = name
+    pod_data["metadata"]["namespace"] = namespace
+    container = pod_data["spec"]["containers"][0]
+    volume = pod_data["spec"]["volumes"][0]
+
+    # Update PVC name in Pod
+    pvc_name = pvc_name or create_unique_resource_name("fill-pool-pvc", "pvc")
+    volume["persistentVolumeClaim"]["claimName"] = pvc_name
+
+    # Update BLOCK_SIZE env variable
+    for env_var in container.get("env", []):
+        if env_var["name"] == "BLOCK_SIZE":
+            env_var["value"] = block_size
+
+    # Update resources
+    container["resources"] = {
+        "requests": {"cpu": cpu_request, "memory": mem_request},
+        "limits": {"cpu": cpu_limit, "memory": mem_limit},
+    }
+
+    # Update command dynamically
+    container["command"] = [
+        "sh",
+        "-c",
+        f'echo "Filling PVC with {fill_mode} data..."; '
+        f"dd if={input_source} of=/mnt/fill/testfile bs=${{BLOCK_SIZE:-{block_size}}}",
+    ]
+
+    pvc_name = pvc_name or create_unique_resource_name("fill-pool-pvc", "pvc")
+    sc_name = sc_name or constants.DEFAULT_STORAGECLASS_RBD
+    # Load base PVC manifest
+    pvc_data = templating.load_yaml(pvc_base_yaml_path)
+    # Apply overrides
+    pvc_data["metadata"]["name"] = pvc_name
+    pvc_data["metadata"]["namespace"] = pod_data["metadata"]["namespace"]
+    pvc_data["spec"]["storageClassName"] = sc_name
+    pvc_data["spec"]["resources"]["requests"]["storage"] = storage
+
+    # Create PVC resource in OpenShift
+    ocs_obj = helpers.create_resource(**pvc_data)
+    pvc_obj = PVC(**ocs_obj.data)
+    # Create Pod resource in OpenShift
+    ocs_obj = helpers.create_resource(**pod_data)
+    pod_obj = Pod(**ocs_obj.data)
+
+    return pod_obj, pvc_obj
+
+
+@pytest.fixture
+def fill_pod_factory(request):
+    """
+    Factory to generate and create a Pod resource in OpenShift to fill up the cluster.
+    Also creates the linked PVC using fill_pvc_factory.
+
+    """
+    pod_objects = []
+    pvc_objects = []
+    namespace_names = []
+
+    def factory(
+        name=None,
+        block_size="1M",
+        cpu_request="100m",
+        mem_request="128Mi",
+        cpu_limit="500m",
+        mem_limit="256Mi",
+        fill_mode="zero",
+        base_yaml_path=constants.FILL_POOL_POD_YAML,
+        pvc_name=None,
+        sc_name=constants.DEFAULT_STORAGECLASS_RBD,
+        storage="50Gi",
+    ):
+        """
+        Create a Pod that fills up the cluster storage by writing data to a PVC.
+
+        Args:
+            name (str): Name of the Pod to create.
+            block_size (str): Block size for the dd command.
+            cpu_request (str): CPU request for the Pod.
+            mem_request (str): Memory request for the Pod.
+            cpu_limit (str): CPU limit for the Pod.
+            mem_limit (str): Memory limit for the Pod.
+            fill_mode (str): Mode of filling data, either 'zero' or 'random'.
+            base_yaml_path (str): Path to the base Pod YAML manifest.
+            pvc_name (str): Name of the PVC to create and attach to the Pod.
+            sc_name (str): StorageClass name for the PVC.
+            storage (str): Storage size for the PVC.
+
+        Returns:
+            Pod: The created OCS Pod object.
+
+        """
+        pod_obj, pvc_obj = create_fill_pod_factory_fixture(
+            name=name,
+            block_size=block_size,
+            cpu_request=cpu_request,
+            mem_request=mem_request,
+            cpu_limit=cpu_limit,
+            mem_limit=mem_limit,
+            fill_mode=fill_mode,
+            base_yaml_path=base_yaml_path,
+            pvc_name=pvc_name,
+            sc_name=sc_name,
+            storage=storage,
+        )
+        pod_objects.append(pod_obj)
+        pvc_objects.append(pvc_obj)
+        namespace_names.append(pod_obj.namespace)
+
+        return pod_obj
+
+    def finalizer():
+        """
+        Delete created Pods, PVCs, and Namespaces.
+
+        """
+        for pod_obj in pod_objects:
+            log.info(f"Deleting Pod {pod_obj.name}")
+            catch_exceptions(Exception)(pod_obj.delete)()
+
+        for pvc_obj in pvc_objects:
+            log.info(f"Deleting PVC {pvc_obj.name}")
+            catch_exceptions(Exception)(pvc_obj.delete)()
+
+        for namespace in namespace_names:
+            log.info(f"Deleting Namespace {namespace}")
+            catch_exceptions(CommandFailed)(run_cmd)(f"oc delete project {namespace}")
+
+    request.addfinalizer(finalizer)
+    return factory
