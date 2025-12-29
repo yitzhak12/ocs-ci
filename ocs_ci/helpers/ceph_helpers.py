@@ -2,6 +2,7 @@ from ocs_ci.ocs.cluster import (
     logger,
     get_mon_quorum_ranks,
     get_percent_used_capacity,
+    get_ceph_used_capacity,
 )
 from ocs_ci.ocs.exceptions import TimeoutExpiredError
 from ocs_ci.utility.utils import TimeoutSampler
@@ -90,4 +91,40 @@ def wait_for_mons_in_quorum(expected_mon_count, timeout=300, sleep=20) -> None:
         raise TimeoutExpiredError(
             f"Failed to reach the expected number of monitors {expected_mon_count} "
             f"in quorum within the given timeout {timeout}."
+        ) from ex
+
+
+def wait_for_ceph_used_capacity_reached(expected_used_capacity, timeout=1800, sleep=20):
+    """
+    Wait until the cluster used Ceph capacity in GiB reaches or exceeds a specified threshold.
+
+    Args:
+        expected_used_capacity (int|float): The used capacity in GiB to wait for.
+        timeout (int): Maximum time to wait in seconds. Defaults to 1800 seconds (30 minutes).
+        sleep (int): Time to wait between checks in seconds. Defaults to 20 seconds.
+
+    Raises:
+        TimeoutExpiredError: If the expected capacity is not reached within the timeout.
+
+    """
+    logger.info(
+        f"Wait for the used Ceph capacity to reach {expected_used_capacity} GiB"
+    )
+
+    try:
+        for used_gib in TimeoutSampler(
+            timeout=timeout,
+            sleep=sleep,
+            func=get_ceph_used_capacity,
+        ):
+            logger.info(f"Current used Ceph capacity = {used_gib} GiB")
+            if used_gib >= expected_used_capacity:
+                logger.info(
+                    f"The expected used Ceph capacity {expected_used_capacity} GiB reached"
+                )
+                break
+    except TimeoutExpiredError as ex:
+        raise TimeoutExpiredError(
+            f"Failed to reach the expected used Ceph capacity {expected_used_capacity} GiB "
+            f"in the given timeout {timeout}"
         ) from ex
