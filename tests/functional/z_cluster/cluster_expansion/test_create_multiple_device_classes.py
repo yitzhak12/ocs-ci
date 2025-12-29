@@ -12,12 +12,13 @@ from ocs_ci.framework.testlib import (
 )
 from ocs_ci.helpers.sanity_helpers import Sanity
 from ocs_ci.ocs import constants
-from ocs_ci.ocs.node import get_osd_running_nodes
+from ocs_ci.ocs.node import get_osd_running_nodes, add_disk_to_node
 from ocs_ci.ocs.device_classes import (
     create_new_lvs_for_new_deviceclass,
     verification_steps_after_adding_new_deviceclass,
+    add_disks_matching_lvs_size,
 )
-from ocs_ci.ocs.resources.pv import wait_for_pvs_in_lvs_to_reach_status
+from ocs_ci.ocs.resources.pv import wait_for_pvs_in_lvs_to_reach_status, get_pv_objs_in_sc, wait_for_new_pvs_status
 from ocs_ci.ocs.resources.storage_cluster import (
     add_new_deviceset_in_storagecluster,
     get_storage_cluster,
@@ -132,3 +133,44 @@ class TestMultipleDeviceClasses(ManageTest):
         self.sanity_helpers.create_resources(
             pvc_factory, pod_factory, bucket_factory, rgw_bucket_factory
         )
+
+    def test_add_new_ssd_device_class_same_size(
+        self, pvc_factory, pod_factory, bucket_factory, rgw_bucket_factory
+    ):
+        """
+        The test will perform the following steps:
+        1. Get the osd nodes.
+        2. Add new disks for the new deviceclass using the same existing LocalVolumeSet
+        with the same storage size.
+        3. Wait for the PVS in the LocalVolumeSet above to be available.
+        4. Add a new device set in the storagecluster for the existing LocalVolumeSet above
+        with the same storage class name and size, which will also create a new deviceclass.
+        5. Wait for the storagecluster to be ready.
+        6. Create a new CephBlockPool for the device class above.
+        7. Wait for the CephBlockPool to be ready.
+        8. Create a new StorageClass for the pool.
+        9. Run the Verification steps as defined in the function
+        'verification_steps_after_adding_new_deviceclass'.
+        10. Check the cluster and Ceph health.
+        11. Check basic cluster functionality by creating some resources.
+
+        """
+        get_pv_objs_in_sc()
+        osd_nodes = get_osd_running_nodes()
+        log.info(f"osd node names = {osd_nodes}")
+        log.info("Add new disks for the new deviceclass")
+        lvs_obj = add_disks_matching_lvs_size(osd_nodes)
+        num_of_new_pvs=len(osd_nodes)
+
+        log.info(
+            "Wait for the new PVs in the existing LocalVolumeSet to be available"
+        )
+        wait_for_new_pvs_status(
+            sc_name=lvs_obj.name,
+            expected_status=constants.STATUS_AVAILABLE,
+            num_of_new_pvs=num_of_new_pvs,
+        )
+
+
+
+

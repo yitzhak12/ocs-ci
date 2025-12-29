@@ -834,3 +834,41 @@ def get_pvcs_using_storageclass(
     except CommandFailed as e:
         log.error(f"Failed to get PVCs: {e}")
         raise
+
+
+def wait_for_deviceset_pvcs_to_reach_status(
+    deviceset_name, pvc_count, expected_status, namespace=None, timeout=180, sleep=10
+):
+    """
+    Wait for the Persistent Volume Claims (PVCs) associated with a specific Deviceset
+    to reach the expected status within a given timeout.
+
+    Args:
+        deviceset_name (str): The Deviceset name whose PVCs are being monitored.
+        pvc_count (int): The number of PVCs expected to reach the desired status.
+        expected_status (str): The expected status of the PVCs (e.g., "Bound", "Available").
+        namespace (str): The namespace where the Deviceset PVCs are located.
+        timeout (int): Maximum time to wait for the PVCs to reach the expected status, in seconds.
+        sleep (int): Interval between successive checks, in seconds.
+
+    Returns:
+        bool: True, if the PVCs reach the expected status within the specified timeout. False, otherwise.
+
+    Raises:
+        TimeoutExpiredError: If the expected status is not reached within the timeout duration.
+        ResourceWrongStatusException: If no PVCs are found for the specified Deviceset.
+    """
+    namespace = namespace or config.ENV_DATA["cluster_namespace"]
+    log.info(
+        f"Waiting for the PVCs in the Deviceset {deviceset_name} to reach the "
+        f"expected status {expected_status}"
+    )
+    selector = f"ceph.rook.io/DeviceSet={deviceset_name}"
+    pvc_obj = OCP(kind=constants.PVC, namespace=namespace)
+    pvc_obj.wait_for_resource(
+        condition=expected_status,
+        resource_count=pvc_count,
+        selector=selector,
+        timeout=timeout,
+        sleep=sleep,
+    )

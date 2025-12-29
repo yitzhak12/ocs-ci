@@ -103,6 +103,40 @@ def create_new_lvs_for_new_deviceclass(
     return lvs_obj
 
 
+def add_disks_matching_lvs_size(
+    worker_nodes, ssd=True
+):
+    """
+    Add new disks for an existing LocalVolumeSet resource
+    The disk size will be equal to the existing OSD size.
+
+    Args:
+        worker_nodes (list): The worker node names to be used in the LocalVolumeSet resource.
+        ssd (bool): if True, mark disk as SSD
+
+    Returns:
+        OCS: The OCS instance for the LocalVolumeSet resource
+
+    """
+    osd_size = get_storage_size()
+    log.info(f"the osd size is {osd_size}")
+
+    lvs_obj = OCP(
+        kind=constants.LOCAL_VOLUME_SET,
+        namespace=defaults.LOCAL_STORAGE_NAMESPACE,
+        resource_name=constants.LOCAL_BLOCK_RESOURCE,
+    )
+
+    # The disk size will be equal to the existing OSD size
+    disk_size_in_gb = osd_size
+    disk_size = int(disk_size_in_gb[:-2])
+    worker_node_objs = get_node_objs(worker_nodes)
+    for n in worker_node_objs:
+        add_disk_to_node(n, disk_size=disk_size, ssd=ssd)
+
+    return lvs_obj
+
+
 def check_ceph_state_post_add_deviceclass():
     """
     Check the Ceph state post add a new deviceclass.

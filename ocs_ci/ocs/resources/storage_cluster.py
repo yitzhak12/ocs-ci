@@ -3255,7 +3255,7 @@ def get_csi_images_for_client_ocp_version(ocp_version=None):
 
 
 def add_new_deviceset_in_storagecluster(
-    device_class, name, count=3, replica=1, access_modes=None, device_type="SSD"
+    device_class, name, count=3, replica=1, access_modes=None, device_type="SSD", sc_name=None, storage_size=None,
 ):
     """
     Add a new DeviceSet to the StorageCluster.
@@ -3267,12 +3267,15 @@ def add_new_deviceset_in_storagecluster(
         replica (int): Number of replicas.
         access_modes (list): List of access modes.
         device_type (str): Device type for the DeviceSet.
+        sc_name (str): The storage class name for the DeviceSet. If None, use device_class name.
+        storage_size (str): Storage size for the DeviceSet.
 
     Returns:
         bool: True if the patch was applied successfully, False otherwise.
 
     """
     access_modes = access_modes or ["ReadWriteOnce"]
+    sc_name = sc_name or device_class
 
     template_data = templating.load_yaml(constants.STORAGE_DEVICESET_YAML)
     # Update the YAML with the relevant parameters
@@ -3282,11 +3285,16 @@ def add_new_deviceset_in_storagecluster(
     ] = access_modes
     template_data["spec"]["storageDeviceSets"][0]["dataPVCTemplate"]["spec"][
         "storageClassName"
-    ] = device_class
+    ] = sc_name
     template_data["spec"]["storageDeviceSets"][0]["deviceClass"] = device_class
     template_data["spec"]["storageDeviceSets"][0]["name"] = name
     template_data["spec"]["storageDeviceSets"][0]["replica"] = replica
     template_data["spec"]["storageDeviceSets"][0]["deviceType"] = device_type
+
+    if storage_size:
+        template_data["spec"]["storageDeviceSets"][0]["dataPVCTemplate"]["spec"][
+            "resources"
+        ]["requests"]["storage"] = storage_size
 
     new_device_set = template_data["spec"]["storageDeviceSets"][0]
 
