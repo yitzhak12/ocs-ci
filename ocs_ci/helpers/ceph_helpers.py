@@ -81,3 +81,99 @@ def wait_for_ceph_used_capacity_reached(expected_used_capacity, timeout=1800, sl
             f"Failed to reach the expected used Ceph capacity {expected_used_capacity} GiB "
             f"in the given timeout {timeout}"
         ) from ex
+
+
+def get_mon_quorum_ranks():
+    """
+    Returns a mapping of mon names to ranks using 'ceph mon stat'.
+    Only monitors currently in quorum are returned.
+    """
+    ceph_tools_pod = get_ceph_tools_pod()
+    # Execute the command to get monitor status data
+    data = dict(ceph_tools_pod.exec_cmd_on_pod(command="ceph mon stat"))
+
+    # Build the dictionary directly from the quorum list
+    # data['quorum'] looks like: [{"rank": 0, "name": "a"}, {"rank": 1, "name": "b"}]
+    return {mon["name"]: mon["rank"] for mon in data.get("quorum", [])}
+
+
+def is_mon_down(mon_id):
+    """
+    Check if a monitor is down by verifying its absence in the quorum list.
+
+    Args:
+        mon_id (str): The monitor ID (e.g., 'a', 'b', 'c') to check.
+
+    Returns:
+        bool: True if the monitor is down, False otherwise.
+    """
+    mon_quorum_ranks = get_mon_quorum_ranks()
+    logger.info(f"Current monitor quorum ranks: {mon_quorum_ranks}")
+
+    # If the monitor ID is not in the quorum ranks, it is considered down
+    if mon_id not in mon_quorum_ranks:
+        logger.info(f"Monitor {mon_id} is down.")
+        return True
+    else:
+        logger.info(f"Monitor {mon_id} is up.")
+        return False
+
+
+def wait_for_mon_down(mon_id, timeout=300, sleep=10):
+    """
+    Wait until a specified monitor is down.
+
+    Args:
+        mon_id (str): The monitor ID (e.g., 'a', 'b', 'c') to wait for.
+        timeout (int): Maximum time to wait in seconds. Defaults to 300 seconds (5 minutes).
+        sleep (int): Time to wait between checks in seconds. Defaults to 10 seconds.
+
+    Raises:
+        TimeoutExpiredError: If the monitor does not go down within the timeout.
+
+    """
+    logger.info(f"Waiting for monitor {mon_id} to go down.")
+
+    try:
+        for _ in TimeoutSampler(
+            timeout=timeout,
+            sleep=sleep,
+            func=is_mon_down,
+            mon_id=mon_id,
+        ):
+            logger.info(f"Monitor {mon_id} is down.")
+            break
+    except TimeoutExpiredError as ex:
+        raise TimeoutExpiredError(
+            f"Monitor {mon_id} did not go down within {timeout} seconds."
+        ) from ex
+
+
+def wait_for_mon_up(mon_id, timeout=300, sleep=10):
+    """
+    Wait until a specified monitor is up.
+
+    Args:
+        mon_id (str): The monitor ID (e.g., 'a', 'b', 'c') to wait for.
+        timeout (int): Maximum time to wait in seconds. Defaults to 300 seconds (5 minutes).
+        sleep (int): Time to wait between checks in seconds. Defaults to 10 seconds.
+
+    Raises:
+        TimeoutExpiredError: If the monitor does not come up within the timeout.
+
+    """
+    logger.info(f"Waiting for monitor {mon_id} to come up.")
+
+    try:
+        for _ in TimeoutSampler(
+            timeout=timeout,
+            sleep=sleep,
+            func=lambda mid: not is_mon_down(mid),
+            mid=mon_id,
+        ):
+            logger.info(f"Monitor {mon_id} is up.")
+            break
+    except TimeoutExpiredError as ex:
+        raise TimeoutExpiredError(
+            f"Monitor {mon_id} did not come up within {timeout} seconds."
+        ) from ex
