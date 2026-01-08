@@ -5,7 +5,12 @@ import re
 from ocs_ci.ocs.resources.storage_cluster import get_default_storagecluster
 from ocs_ci.ocs import ocp, constants
 from ocs_ci.framework import config
-from ocs_ci.ocs.resources.pod import wait_for_matching_pattern_in_pod_logs, get_operator_pods
+from ocs_ci.ocs.resources.pod import (
+    wait_for_matching_pattern_in_pod_logs,
+    get_operator_pods,
+    wait_for_pods_to_be_in_statuses,
+    get_mon_pod_by_id,
+)
 from ocs_ci.ocs.exceptions import TimeoutExpiredError
 
 
@@ -82,7 +87,9 @@ def get_storagecluster_mon_healthcheck(sc_obj=None):
     sc_dict = sc_obj.get()
     base_sc_dict = sc_dict["items"][0] if sc_dict.get("items") else sc_dict
     ceph_cluster = base_sc_dict["spec"]["managedResources"]["cephCluster"]
-    mon_healthcheck = ceph_cluster.get("healthCheck", {}).get("daemonHealth", {}).get("mon", {})
+    mon_healthcheck = (
+        ceph_cluster.get("healthCheck", {}).get("daemonHealth", {}).get("mon", {})
+    )
     logger.info(f"Current mon healthcheck configuration: {mon_healthcheck}")
     return mon_healthcheck
 
@@ -110,7 +117,12 @@ def get_cephcluster_mon_healthcheck(cc_obj=None):
 
     cc_dict = cc_obj.get()
     base_cc_dict = cc_dict["items"][0] if cc_dict.get("items") else cc_dict
-    mon_healthcheck = base_cc_dict.get("spec", {}).get("healthCheck", {}).get("daemonHealth", {}).get("mon", {})
+    mon_healthcheck = (
+        base_cc_dict.get("spec", {})
+        .get("healthCheck", {})
+        .get("daemonHealth", {})
+        .get("mon", {})
+    )
     logger.info(f"Current cephcluster mon healthcheck configuration: {mon_healthcheck}")
     return mon_healthcheck
 
@@ -202,7 +214,9 @@ def extract_timeout_seconds(line: str) -> int | None:
     """
     # Matches: "599 seconds left", "(599 seconds left)", "599 seconds remaining",
     # or "599 seconds before failover"
-    m = re.search(r'\(?\s*(\d+)\s+seconds\s+(left|remaining|before)\b', line, flags=re.IGNORECASE)
+    m = re.search(
+        r"\(?\s*(\d+)\s+seconds\s+(left|remaining|before)\b", line, flags=re.IGNORECASE
+    )
     return int(m.group(1)) if m else None
 
 
@@ -230,7 +244,9 @@ def verify_mon_healthcheck_timeout_value_in_logs(
 
     """
     try:
-        mon_timeout_lines = wait_for_mon_healthcheck_timeout_in_logs(mon_id, since, timeout, sleep)
+        mon_timeout_lines = wait_for_mon_healthcheck_timeout_in_logs(
+            mon_id, since, timeout, sleep
+        )
     except TimeoutExpiredError as ex:
         logger.warning(
             f"Timeout expired while waiting for mon '{mon_id}' healthcheck timeout logs: {ex}"
@@ -241,24 +257,58 @@ def verify_mon_healthcheck_timeout_value_in_logs(
         logger.warning(f"No log lines found for mon '{mon_id}' healthcheck timeout.")
         return False
 
+    logger.info(
+        f"Found {len(mon_timeout_lines)} log lines for mon '{mon_id}' healthcheck timeout. "
+        f"mon timeout_lines: {mon_timeout_lines}"
+    )
     # The mon healthcheck timeout value in logs may vary slightly due to timing, so we allow
     # a range check.
-    timeout_value_range = (timeout_value - 90, timeout_value)  # e.g., for 600s, range is 510-600s
+    timeout_value_range = (
+        timeout_value - 90,
+        timeout_value,
+    )  # e.g., for 600s, range is 510-600s
     line = mon_timeout_lines[0]
     extracted_timeout = extract_timeout_seconds(line)
     if extracted_timeout is None:
-        logger.warning(f"Could not extract timeout seconds from log line: {line}")
+        logger.warning(f"Could not extract timeout seconds from log line: \n{line}")
         return False
 
     if not (timeout_value_range[0] <= extracted_timeout <= timeout_value_range[1]):
         logger.warning(
             f"Mon '{mon_id}' healthcheck timeout value {extracted_timeout} not in expected range "
-            f"{timeout_value_range} as per log line: {line}"
+            f"{timeout_value_range} as per log line: \n{line}"
         )
         return False
 
     logger.info(
         f"Mon '{mon_id}' healthcheck timeout value {extracted_timeout} is within expected range "
-        f"{timeout_value_range} as per log line: {line}"
+        f"{timeout_value_range} as per log line: \n{line}"
     )
     return True
+
+
+def wait_for_mon_pod_restart(mon_id, timeout=300, sleep=20):
+    """
+    Wait until the monitor pod for a specified monitor ID restarts.
+
+    Args:
+        mon_id (str): The monitor ID (e.g., 'a', 'b', 'c') to wait for.
+        timeout (int): Maximum time to wait in seconds. Defaults to 300 seconds (5 minutes).
+        sleep (int): Time to wait between checks in seconds. Defaults to 20 seconds.
+
+    Raises:
+        TimeoutExpiredError: If the monitor pod does not restart within the timeout.
+
+    """
+    mon_pod = get_mon_pod_by_id(mon_id)
+    logger.info(f"Waiting {timeout} seconds for the monitor pod {mon_id} to restart.")
+    res = wait_for_pods_to_be_in_statuses(
+        expected_statuses=[constants.STATUS_TERMINATING],
+        pod_names=[mon_pod.name],
+        timeout=timeout,
+        sleep=sleep,
+    )
+    if not res:
+        raise TimeoutExpiredError(
+            f"Monitor pod {mon_id} did not restart within {timeout} seconds."
+        )

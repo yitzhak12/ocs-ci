@@ -2,6 +2,7 @@ import logging
 
 from ocs_ci.ocs.cluster import get_percent_used_capacity, get_ceph_used_capacity
 from ocs_ci.ocs.exceptions import TimeoutExpiredError
+from ocs_ci.ocs.resources.pod import get_ceph_tools_pod
 from ocs_ci.utility.utils import TimeoutSampler
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,7 @@ def get_mon_quorum_ranks():
     """
     ceph_tools_pod = get_ceph_tools_pod()
     # Execute the command to get monitor status data
-    data = dict(ceph_tools_pod.exec_cmd_on_pod(command="ceph mon stat"))
+    data = dict(ceph_tools_pod.exec_cmd_on_pod(command="ceph mon stat --format json"))
 
     # Build the dictionary directly from the quorum list
     # data['quorum'] looks like: [{"rank": 0, "name": "a"}, {"rank": 1, "name": "b"}]
@@ -119,7 +120,7 @@ def is_mon_down(mon_id):
         return False
 
 
-def wait_for_mon_down(mon_id, timeout=300, sleep=10):
+def wait_for_mon_down(mon_id, timeout=180, sleep=10):
     """
     Wait until a specified monitor is down.
 
@@ -133,23 +134,19 @@ def wait_for_mon_down(mon_id, timeout=300, sleep=10):
 
     """
     logger.info(f"Waiting for monitor {mon_id} to go down.")
-
-    try:
-        for _ in TimeoutSampler(
-            timeout=timeout,
-            sleep=sleep,
-            func=is_mon_down,
-            mon_id=mon_id,
-        ):
-            logger.info(f"Monitor {mon_id} is down.")
-            break
-    except TimeoutExpiredError as ex:
+    sample = TimeoutSampler(
+        timeout=timeout,
+        sleep=sleep,
+        func=is_mon_down,
+        mon_id=mon_id,
+    )
+    if not sample.wait_for_func_status(result=True):
         raise TimeoutExpiredError(
             f"Monitor {mon_id} did not go down within {timeout} seconds."
-        ) from ex
+        )
 
 
-def wait_for_mon_up(mon_id, timeout=300, sleep=10):
+def wait_for_mon_up(mon_id, timeout=300, sleep=20):
     """
     Wait until a specified monitor is up.
 
@@ -163,17 +160,48 @@ def wait_for_mon_up(mon_id, timeout=300, sleep=10):
 
     """
     logger.info(f"Waiting for monitor {mon_id} to come up.")
-
-    try:
-        for _ in TimeoutSampler(
-            timeout=timeout,
-            sleep=sleep,
-            func=lambda mid: not is_mon_down(mid),
-            mid=mon_id,
-        ):
-            logger.info(f"Monitor {mon_id} is up.")
-            break
-    except TimeoutExpiredError as ex:
+    sample = TimeoutSampler(
+        timeout=timeout,
+        sleep=sleep,
+        func=is_mon_down,
+        mon_id=mon_id,
+    )
+    if not sample.wait_for_func_status(result=False):
         raise TimeoutExpiredError(
             f"Monitor {mon_id} did not come up within {timeout} seconds."
+        )
+
+
+def wait_for_mons_in_quorum(expected_mon_count, timeout=300, sleep=20):
+    """
+    Wait until the number of monitors in quorum reaches the expected count.
+
+    Args:
+        expected_mon_count (int): The expected number of monitors in quorum.
+        timeout (int): Maximum time to wait in seconds. Defaults to 300 seconds (5 minutes).
+        sleep (int): Time to wait between checks in seconds. Defaults to 10 seconds.
+
+    Raises:
+        TimeoutExpiredError: If the expected number of monitors in quorum is not reached within the timeout.
+
+    """
+    logger.info(f"Waiting for {expected_mon_count} monitors to be in quorum.")
+
+    try:
+        for mon_quorum_ranks in TimeoutSampler(
+            timeout=timeout,
+            sleep=sleep,
+            func=get_mon_quorum_ranks,
+        ):
+            current_count = len(mon_quorum_ranks)
+            logger.info(f"Current monitors in quorum: {current_count}")
+            if current_count >= expected_mon_count:
+                logger.info(
+                    f"The expected number of monitors {expected_mon_count} in quorum reached."
+                )
+                break
+    except TimeoutExpiredError as ex:
+        raise TimeoutExpiredError(
+            f"Failed to reach the expected number of monitors {expected_mon_count} "
+            f"in quorum within the given timeout {timeout}."
         ) from ex

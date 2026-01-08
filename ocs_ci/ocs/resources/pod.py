@@ -1971,7 +1971,6 @@ def get_pod_logs(
         str: Output from 'oc get logs <pod_name> command
 
     """
-
     namespace = namespace or config.ENV_DATA["cluster_namespace"]
     pod = OCP(kind=constants.POD, namespace=namespace)
     cmd = f"logs {pod_name}"
@@ -4510,11 +4509,27 @@ def wait_for_matching_pattern_in_pod_logs(
     try:
         for matched_lines in sampler:
             if matched_lines:
-                logger.info(
-                    f"Pattern '{pattern}' found in logs of pod '{pod_name}'."
-                )
+                logger.info(f"Pattern '{pattern}' found in logs of pod '{pod_name}'.")
                 return matched_lines
     except TimeoutExpiredError as e:
         raise TimeoutExpiredError(
             f"Pattern '{pattern}' not found in logs of pod '{pod_name}' within {timeout} seconds."
         ) from e
+
+
+def get_mon_pod_by_id(mon_id, namespace=None):
+    """
+    Function to get monitor pod by mon_id label
+
+    Args:
+        mon_id (str): mon id of the monitor pod
+        namespace (str): Namespace in which monitor pod is running
+
+    Returns:
+        Pod: Pod object of the monitor pod
+    """
+    mons = get_pods_having_label(label=f"mon={mon_id}", namespace=namespace)
+    if not mons:
+        raise ValueError(f"Monitor pod with id {mon_id} not found")
+
+    return Pod(**mons[0])
