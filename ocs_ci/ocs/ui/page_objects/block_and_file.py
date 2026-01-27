@@ -309,3 +309,8 @@ class BlockAndFile(PageNavigator):
             parent_element_loc[1],
         )
         return len(self.get_elements(healthy_loc)) > 0
+
+    def attach_storage(self):
+        self.wait_for_element_to_be_visible(self.storage_cluster_actions_loc)
+        self.do_click(self.storage_cluster_actions_loc)
+        self.do_click(self.attach_storage_loc)

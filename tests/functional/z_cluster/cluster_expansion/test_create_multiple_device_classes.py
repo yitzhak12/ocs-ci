@@ -12,6 +12,8 @@ from ocs_ci.framework.testlib import (
     skipif_bm,
     skipif_hci_provider_or_client,
     polarion_id,
+    ui,
+    black_squad,
 )
 from ocs_ci.helpers.sanity_helpers import Sanity
 from ocs_ci.ocs import constants
@@ -38,6 +40,7 @@ from ocs_ci.helpers.helpers import (
     create_rbd_deviceclass_storageclass,
 )
 from ocs_ci.utility.utils import ceph_health_check
+from ocs_ci.ocs.ui.page_objects.page_navigator import PageNavigator
 
 
 log = logging.getLogger(__name__)
@@ -250,3 +253,26 @@ class TestMultipleDeviceClasses(ManageTest):
         self.sanity_helpers.create_resources(
             pvc_factory, pod_factory, bucket_factory, rgw_bucket_factory
         )
+
+
+class TestMultipleDeviceClassesUI(ManageTest):
+    """
+    Automate the multiple device classes tests via UI
+
+    """
+
+    @pytest.fixture(autouse=True)
+    def teardown(self):
+        """
+        Check that the ceph health is OK
+
+        """
+        log.info("Wait for the ceph health to be OK")
+        ceph_health_check(tries=20)
+
+    @ui
+    @black_squad
+    @tier2
+    def test_add_new_device_class_ui(self, setup_ui_session):
+        block_and_file = PageNavigator().nav_storage_cluster_default_page()
+        block_and_file.attach_storage()

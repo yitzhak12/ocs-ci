@@ -1509,6 +1509,17 @@ add_capacity = {
     "filter_pods": ('input[data-test-id="item-filter"]', By.CSS_SELECTOR),
 }
 
+storage_cluster = {
+    "storage_cluster_actions": (
+        '[data-test-id="details-actions"] button[data-test="kebab-button"]',
+        By.CSS_SELECTOR,
+    ),
+}
+
+attach_storage = {
+    "attach_storage_button": ('//button[contains(., "Attach Storage")]', By.XPATH),
+}
+
 add_capacity_4_11 = {
     "thin_sc": ("thin-link", By.ID),
     "gp2_sc": ("gp2-link", By.ID),
@@ -2968,6 +2979,8 @@ locators = {
         "alerting": alerting,
         "bucket_tab": bucket_tab,
         "data_foundation_overview": data_foundation_overview,
+        "storage_cluster": storage_cluster,
+        "attach_storage": attach_storage,
     },
     "4.20": {
         "login": {**login, **login_4_11, **login_4_14, **login_4_19},

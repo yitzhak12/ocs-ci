@@ -175,6 +175,12 @@ class BaseUI:
         self.data_foundation_overview = self.deep_get(
             locators_for_current_ocp_version(), "data_foundation_overview"
         )
+        self.storage_cluster_actions_loc = self.deep_get(
+            locators_for_current_ocp_version(), "storage_cluster_actions"
+        )
+        self.attach_storage_loc = self.deep_get(
+            locators_for_current_ocp_version(), "attach_storage"
+        )
 
     def __repr__(self):
         return f"{self.__class__.__name__} Web Page"
