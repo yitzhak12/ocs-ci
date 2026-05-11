@@ -138,6 +138,14 @@ class HostedClients(HyperShiftBase):
                 )
                 hosted_odf = HostedODF(cluster_name)
                 if not hosted_odf.odf_client_installed():
+                    logger.info(
+                        "ODF client not installed; deleting failed OLM bundle "
+                        "unpack jobs and catalog source before retrying"
+                    )
+                    hosted_odf.exec_oc_cmd(
+                        "delete jobs --all -n openshift-marketplace",
+                        ignore_error=True,
+                    )
                     hosted_odf.exec_oc_cmd(
                         "delete catalogsource --all -n openshift-marketplace"
                     )
@@ -739,6 +747,57 @@ class HostedODF(HypershiftHostedOCP):
         return self.network_policy_exists(namespace=namespace)
 
     @kubeconfig_exists_decorator
+    def _wait_for_worker_nodes_ready(self, timeout=900):
+        """
+        Wait until at least one worker node in the hosted cluster is Ready.
+
+        OLM bundle unpack jobs fail with a 600s deadline if no node is Ready
+        to schedule the pods. Waiting here before creating the CatalogSource
+        prevents that race condition during cluster boot.
+
+        Args:
+            timeout (int): Maximum seconds to wait for nodes to be Ready.
+
+        Returns:
+            bool: True once at least one worker node is Ready.
+
+        Raises:
+            TimeoutExpiredError: If no worker node becomes Ready within
+                timeout.
+        """
+
+        def _ready_worker_count():
+            try:
+                result = self.exec_oc_cmd(
+                    "get nodes -l node-role.kubernetes.io/worker --no-headers",
+                    ignore_error=True,
+                )
+                if not result or not result.stdout:
+                    return 0
+                return sum(
+                    1
+                    for line in result.stdout.strip().splitlines()
+                    if line and line.split()[1] == "Ready"
+                )
+            except CommandFailed:
+                return 0
+
+        logger.info(
+            f"Waiting for worker nodes to be Ready on '{self.name}' "
+            f"(timeout={timeout}s)"
+        )
+        for sample in TimeoutSampler(
+            timeout=timeout,
+            sleep=15,
+            func=_ready_worker_count,
+        ):
+            if sample > 0:
+                logger.info(
+                    f"Hosted cluster '{self.name}': " f"{sample} worker node(s) Ready"
+                )
+                return True
+
+    @kubeconfig_exists_decorator
     def do_deploy(self):
         """
         Deploy ODF client on hosted OCP cluster
@@ -756,6 +815,11 @@ class HostedODF(HypershiftHostedOCP):
 
         logger.info("Creating ODF client operator group")
         self.create_operator_group()
+
+        logger.info(
+            "Waiting for worker nodes to be Ready before creating " "catalog source"
+        )
+        self._wait_for_worker_nodes_ready()
 
         logger.info("Creating ODF client catalog source")
         self.create_catalog_source()
