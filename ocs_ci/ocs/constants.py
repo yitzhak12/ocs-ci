@@ -730,6 +730,12 @@ REPORT_STATUS_TO_PROVIDER_POD = "report-status-to-provider-"
 ROOK_CEPH_OSD_PREPARE = "rook-ceph-osd-prepare"
 STATUS_REPORTER = "status-reporter"
 
+# Container names
+LOG_COLLECTOR_CONTAINER = "log-collector"
+
+# Pod QoS classes
+POD_QOS_GUARANTEED = "Guaranteed"
+
 # Pod label
 MON_APP_LABEL = "app=rook-ceph-mon"
 MDS_APP_LABEL = "app=rook-ceph-mds"

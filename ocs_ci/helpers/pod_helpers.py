@@ -150,6 +150,51 @@ def validate_all_pods_container_resources(pods_resources_details_dict):
     return {"result": all_ok, "invalid_values": invalid_values}
 
 
+def validate_pod_containers_requests_equal_limits(pod_name, containers):
+    """
+    Validate that every container in a pod has CPU and memory requests
+    equal to limits (required for Guaranteed QoS class).
+
+    Args:
+        pod_name (str): Name of the pod (used in failure messages).
+        containers (list): Container resource details as returned by
+            get_pod_container_resource_details().
+
+    Returns:
+        list: A list of failure strings; empty if all containers pass.
+
+    """
+    failures = []
+    for container in containers:
+        cname = container["container"]
+        cpu_req = container["requests"]["cpu"]
+        cpu_lim = container["limits"]["cpu"]
+        mem_req = container["requests"]["memory"]
+        mem_lim = container["limits"]["memory"]
+
+        logger.info(
+            "%s/%s — cpu req=%s lim=%s | mem req=%s lim=%s",
+            pod_name,
+            cname,
+            cpu_req,
+            cpu_lim,
+            mem_req,
+            mem_lim,
+        )
+
+        if cpu_req != cpu_lim:
+            failures.append(
+                f"{pod_name}/{cname}: CPU requests ({cpu_req})"
+                f" != limits ({cpu_lim})"
+            )
+        if mem_req != mem_lim:
+            failures.append(
+                f"{pod_name}/{cname}: memory requests ({mem_req})"
+                f" != limits ({mem_lim})"
+            )
+    return failures
+
+
 def run_io_on_pods(pods, pod_file_name, size="1G", runtime=30):
     """
     Helper function to run IO on the pods
