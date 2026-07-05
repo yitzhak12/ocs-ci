@@ -48,6 +48,24 @@ class TestCephFSOrphanedSnapshotAlert(ManageTest):
 
     retain_snapclass_name = "test-cephfs-retain-snapclass"
 
+    @property
+    def api(self):
+        if self._api is None:
+            self._api = PrometheusAPI(
+                threading_lock=self._threading_lock,
+                cluster_context=(config.RunWithFirstConsumerConfigContextIfAvailable),
+            )
+        return self._api
+
+    @property
+    def provider_api(self):
+        if self._provider_api is None and config.multicluster:
+            self._provider_api = PrometheusAPI(
+                threading_lock=self._threading_lock,
+                cluster_context=(config.RunWithProviderConfigContextIfAvailable),
+            )
+        return self._provider_api
+
     @pytest.fixture(autouse=True)
     def setup(self, request, pvc_factory, threading_lock):
         """
@@ -86,17 +104,9 @@ class TestCephFSOrphanedSnapshotAlert(ManageTest):
             storage_client=storage_client
         )
 
-        self.api = PrometheusAPI(
-            threading_lock=threading_lock,
-            cluster_context=config.RunWithFirstConsumerConfigContextIfAvailable,
-        )
-
-        self.provider_api = None
-        if config.multicluster:
-            self.provider_api = PrometheusAPI(
-                threading_lock=threading_lock,
-                cluster_context=config.RunWithProviderConfigContextIfAvailable,
-            )
+        self._threading_lock = threading_lock
+        self._api = None
+        self._provider_api = None
 
         self.snap_list_names = []
 
