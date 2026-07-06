@@ -4060,9 +4060,7 @@ def check_ceph_osd_df_tree():
         match = re.match(r"([0-9.]+)([a-zA-Z]+)", line["SIZE"])
         if not match:
             logger.warning(
-                "Unable to parse SIZE %s for OSD ID %s",
-                line["SIZE"],
-                osd_id,
+                f"Unable to parse SIZE {line['SIZE']} " f"for OSD ID {osd_id}"
             )
             return False
 
@@ -4070,8 +4068,7 @@ def check_ceph_osd_df_tree():
         units = match.group(2)
         if units == "B" and size == 0:
             logger.warning(
-                "OSD ID %s reports 0 B — Ceph stats not ready yet",
-                osd_id,
+                f"OSD ID {osd_id} reports 0 B " f"— Ceph stats not ready yet"
             )
             return False
 
