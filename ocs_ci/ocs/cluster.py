@@ -4059,17 +4059,13 @@ def check_ceph_osd_df_tree():
         weight = float(line["WEIGHT"])
         match = re.match(r"([0-9.]+)([a-zA-Z]+)", line["SIZE"])
         if not match:
-            logger.warning(
-                f"Unable to parse SIZE {line['SIZE']} " f"for OSD ID {osd_id}"
-            )
+            logger.warning(f"Unable to parse SIZE {line['SIZE']} for OSD ID {osd_id}")
             return False
 
         size = float(match.group(1))
         units = match.group(2)
         if units == "B" and size == 0:
-            logger.warning(
-                f"OSD ID {osd_id} reports 0 B " f"— Ceph stats not ready yet"
-            )
+            logger.warning(f"OSD ID {osd_id} reports 0 B — Ceph stats not ready yet")
             return False
 
         if units.startswith("Ti"):
