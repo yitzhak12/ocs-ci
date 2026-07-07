@@ -2659,6 +2659,13 @@ validation_4_22 = {
         "/td[@data-label='{1}']",
         By.XPATH,
     ),
+    # {0} = active metric label, e.g. 'Total IOPS'
+    "cephfs_subvolume_all_row_values": (
+        f"//div[contains(text(),'{constants.CEPHFS_SUBVOLUME_METRICS_CARD_TITLE}')]"
+        "/following::div[contains(@class,'odf-loading-box')]"
+        "//table/tbody/tr/td[@data-label='{0}']",
+        By.XPATH,
+    ),
 }
 
 topology = {

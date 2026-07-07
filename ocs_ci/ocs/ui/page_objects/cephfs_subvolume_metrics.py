@@ -47,6 +47,7 @@ class CephFSSubvolumeMetricsCard(BlockAndFile):
         self.value_by_namespace_loc = self.validation_loc[
             "cephfs_subvolume_value_by_namespace"
         ]
+        self.all_row_values_loc = self.validation_loc["cephfs_subvolume_all_row_values"]
 
     def navigate_to_cephfs_subvolume_section(self):
         """Scroll the Block and File tab to bring the CephFS subvolume card into view."""
@@ -155,6 +156,29 @@ class CephFSSubvolumeMetricsCard(BlockAndFile):
         self.wait_for_element_to_be_present(loc, timeout=timeout)
         return self.get_element_text(loc).strip()
 
+    def get_cephfs_subvolume_all_row_values(self, timeout=30):
+        """
+        Return the metric value text from every row in the subvolume table.
+
+        Reads the currently active metric from the dropdown toggle and
+        collects the corresponding ``td[@data-label]`` cell text for each
+        table row.
+
+        Args:
+            timeout (int): Maximum seconds to wait for the value cells.
+
+        Returns:
+            list[str]: Metric value strings, e.g.
+                ``['13 IOPS', '7 IOPS', '2 IOPS']``.
+        """
+        metric = self.get_cephfs_subvolume_metric_toggle_text()
+        loc = format_locator(self.all_row_values_loc, metric)
+        self.wait_for_element_to_be_present(loc, timeout=timeout)
+        elements = self.get_elements(loc)
+        values = [el.text.strip() for el in elements]
+        logger.info("All row values for metric '%s': %s", metric, values)
+        return values
+
     def get_cephfs_subvolume_row_count(self, timeout=30):
         """
         Return the number of rows currently displayed in the subvolume table.
@@ -172,6 +196,33 @@ class CephFSSubvolumeMetricsCard(BlockAndFile):
         rows = self.get_elements(self.table_rows_loc)
         logger.info("CephFS subvolume table row count: %d", len(rows))
         return len(rows)
+
+    def wait_for_row_count(self, expected_count, timeout=360, sleep=20):
+        """
+        Wait until the subvolume table displays exactly ``expected_count`` rows.
+
+        Args:
+            expected_count (int): Target row count.
+            timeout (int): Maximum seconds to wait (default 360).
+            sleep (int): Seconds between polls (default 20).
+
+        Raises:
+            TimeoutExpiredError: If the row count does not reach
+                ``expected_count`` within ``timeout``.
+        """
+        logger.info(
+            "Waiting up to %ds for subvolume table to show %d rows",
+            timeout,
+            expected_count,
+        )
+        for sample in TimeoutSampler(
+            timeout=timeout,
+            sleep=sleep,
+            func=self.get_cephfs_subvolume_row_count,
+        ):
+            logger.info("Current row count: %d / %d", sample, expected_count)
+            if sample >= expected_count:
+                return
 
     def click_cephfs_subvolume_first_row_name(self):
         """
