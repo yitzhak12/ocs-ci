@@ -388,15 +388,18 @@ class TestCephFSSubvolumeTop10Ranking(ManageTest):
         Switch to the given metric and verify the table shows at most
         10 rows with correctly-formatted values.
 
-        The class-scoped setup fixture creates 12 CephFS subvolume
-        workloads once and waits for the table to show 10 rows before
-        the first parametrized test runs.
+        Steps (class-scoped setup, runs once for all parametrized cases):
+        1. Create 12 CephFS subvolume workloads (namespace + PVC + FIO
+           each) so the cluster has more subvolumes than the UI cap.
+        2. Navigate to Storage Cluster > Block and File tab.
+        3. Verify CephFS subvolume metrics card is visible.
+        4. Wait for the table to show exactly 10 rows (max 6 minutes).
 
-        Steps:
-        1. Switch to the parametrized metric (Total IOPS / Total Latency
+        Steps (per parametrized metric):
+        5. Switch to the parametrized metric (Total IOPS / Total Latency
            / Total Throughput).
-        2. Verify at most 10 rows are displayed.
-        3. Verify every displayed row carries a non-empty value with the
+        6. Verify at most 10 rows are displayed.
+        7. Verify every displayed row carries a non-empty value with the
            expected unit suffix for the selected metric.
         """
         subvolume_metrics_card = CephFSSubvolumeMetricsCard()
