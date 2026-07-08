@@ -371,15 +371,15 @@ class TestCephFSSubvolumeTop10Ranking(ManageTest):
         argvalues=[
             pytest.param(
                 constants.CEPHFS_SUBVOLUME_DEFAULT_METRIC,
-                marks=pytest.mark.polarion_id("OCS-XXXX"),
+                marks=pytest.mark.polarion_id("OCS-8053"),
             ),
             pytest.param(
                 constants.CEPHFS_SUBVOLUME_METRIC_LATENCY,
-                marks=pytest.mark.polarion_id("OCS-XXXX"),
+                marks=pytest.mark.polarion_id("OCS-8054"),
             ),
             pytest.param(
                 constants.CEPHFS_SUBVOLUME_METRIC_THROUGHPUT,
-                marks=pytest.mark.polarion_id("OCS-XXXX"),
+                marks=pytest.mark.polarion_id("OCS-8055"),
             ),
         ],
     )
