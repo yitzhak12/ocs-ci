@@ -900,6 +900,11 @@ skipif_lean_deployment = pytest.mark.skipif(
     reason="Test cannot run on lean profile or requires higher cluster resources (insufficient CPU/memory)",
 )
 
+skipif_lean_profile = pytest.mark.skipif(
+    config.ENV_DATA.get("performance_profile") == "lean",
+    reason="StorageAutoScaler does not support the lean resource profile",
+)
+
 
 def skipif_insufficient_resources(ram_gb=65, cpu_cores=6):
     """

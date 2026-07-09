@@ -11,6 +11,7 @@ from ocs_ci.framework.pytest_customization.marks import (
     skipif_external_mode,
     skipif_bmpsi,
     skipif_ibm_power,
+    skipif_lean_profile,
     skipif_lso,
     skipif_managed_service,
     skipif_hci_provider_and_client,
@@ -76,6 +77,7 @@ logger = logging.getLogger(__name__)
 @skipif_lso
 @skipif_external_mode
 @skipif_ibm_power
+@skipif_lean_profile
 @skipif_managed_service
 @skipif_hci_provider_and_client
 class TestStorageAutoscalerBase(ManageTest):
