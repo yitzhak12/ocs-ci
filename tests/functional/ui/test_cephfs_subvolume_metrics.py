@@ -19,6 +19,7 @@ from ocs_ci.framework.testlib import (
 from ocs_ci.helpers.cephfs_stress_helpers import create_cephfs_subvolume_workloads
 from ocs_ci.framework.pytest_customization.marks import (
     green_squad,
+    runs_on_provider,
     skipif_external_mode,
     skipif_mcg_only,
 )
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 @green_squad
+@runs_on_provider
 @skipif_ocs_version("<4.22")
 @skipif_mcg_only
 @skipif_external_mode
@@ -127,6 +129,7 @@ class TestCephFSSubvolumeMetricsSectionReachable(ManageTest):
 
 
 @green_squad
+@runs_on_provider
 @skipif_ocs_version("<4.22")
 @skipif_mcg_only
 @skipif_external_mode
@@ -226,6 +229,7 @@ class TestCephFSSubvolumeMetricsLoadWithActiveWorkload(ManageTest):
 
 
 @green_squad
+@runs_on_provider
 @skipif_ocs_version("<4.22")
 @skipif_mcg_only
 @skipif_external_mode
@@ -299,6 +303,7 @@ class TestCephFSSubvolumeMetricUnitsAndLabels(ManageTest):
 
 
 @green_squad
+@runs_on_provider
 @skipif_ocs_version("<4.22")
 @skipif_mcg_only
 @skipif_external_mode
