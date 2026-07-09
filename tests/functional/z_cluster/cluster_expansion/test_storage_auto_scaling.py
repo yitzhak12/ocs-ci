@@ -15,6 +15,7 @@ from ocs_ci.framework.pytest_customization.marks import (
     skipif_lso,
     skipif_managed_service,
     skipif_hci_provider_and_client,
+    skipif_not_lean_profile,
     brown_squad,
     tier4b,
 )
@@ -566,6 +567,7 @@ class TestStorageAutoscalerPositive(TestStorageAutoscalerBase):
 @skipif_lso
 @skipif_external_mode
 @skipif_ibm_power
+@skipif_lean_profile
 @skipif_managed_service
 @skipif_hci_provider_and_client
 class TestStorageAutoscalerNoTrigger(TestStorageAutoscalerBase):
@@ -666,3 +668,37 @@ class TestStorageAutoscalerNoTrigger(TestStorageAutoscalerBase):
         wait_for_percent_used_capacity_reached(scaling_threshold)
 
         self.verify_autoscaler_no_trigger_steps(auto_scaler.name, auto_scaler.namespace)
+
+
+@brown_squad
+@ignore_leftovers
+@skipif_aws_i3
+@skipif_bm
+@skipif_bmpsi
+@skipif_lso
+@skipif_external_mode
+@skipif_ibm_power
+@skipif_managed_service
+@skipif_hci_provider_and_client
+@skipif_not_lean_profile
+class TestStorageAutoscalerLeanProfile(ManageTest):
+    """
+    Test cases for the StorageAutoScaler behavior on lean resource-profile clusters.
+    """
+
+    @tier2
+    def test_autoscaler_rejected_on_lean_profile(self):
+        """
+        Test that the StorageAutoScaler CR is rejected on a lean resource-profile cluster.
+
+        The StorageAutoScaler operator does not support the lean resource profile.
+        Creating the CR on such a cluster should immediately move it to the 'Invalid'
+        phase instead of 'NotStarted'.
+        """
+        auto_scaler = create_auto_scaler()
+        try:
+            wait_for_auto_scaler_status(
+                constants.AUTOSCALER_INVALID, resource_name=auto_scaler.name, timeout=60
+            )
+        finally:
+            delete_all_storage_autoscalers(namespace=auto_scaler.namespace)
