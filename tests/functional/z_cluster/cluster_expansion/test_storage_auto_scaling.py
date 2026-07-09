@@ -201,14 +201,22 @@ class TestStorageAutoscalerBase(ManageTest):
             f"Storage to fill in zero mode: {storage_to_fill_zero_mode}Gi, "
             f"Storage to fill in random mode: {storage_to_fill_random_mode}Gi"
         )
+        # On vSphere, per-volume storage throughput is typically lower, and
+        # page-cache writeback stalls can throttle dd write speed enough to
+        # miss the fill target within the timeout. Use a larger block size
+        # with oflag=direct there to keep fill throughput consistent.
+        is_vsphere = config.ENV_DATA["platform"].lower() == constants.VSPHERE_PLATFORM
+        fill_kwargs = {"block_size": "8M", "direct_io": True} if is_vsphere else {}
         fill_job_obj = self.fill_job_factory(
             fill_mode="zero",
             storage=f"{storage_to_fill_zero_mode}Gi",
+            **fill_kwargs,
         )
         self.fill_job_objs.append(fill_job_obj)
         fill_job_obj = self.fill_job_factory(
             fill_mode="random",
             storage=f"{storage_to_fill_random_mode}Gi",
+            **fill_kwargs,
         )
         self.fill_job_objs.append(fill_job_obj)
 
