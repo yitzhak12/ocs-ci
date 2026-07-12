@@ -437,7 +437,9 @@ class TestCephFSSubvolumeTop10Ranking(ManageTest):
             row_count,
             expected_unit,
         )
-        all_values = subvolume_metrics_card.get_cephfs_subvolume_all_row_values()
+        all_values = subvolume_metrics_card.get_cephfs_subvolume_all_row_values(
+            expected_count=row_count,
+        )
         for idx, value in enumerate(all_values):
             assert value, f"Row {idx} has an empty value for metric '{metric}'"
             assert expected_unit in value, (

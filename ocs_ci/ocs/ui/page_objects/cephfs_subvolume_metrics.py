@@ -156,7 +156,7 @@ class CephFSSubvolumeMetricsCard(BlockAndFile):
         self.wait_for_element_to_be_present(loc, timeout=timeout)
         return self.get_element_text(loc).strip()
 
-    def get_cephfs_subvolume_all_row_values(self, timeout=30):
+    def get_cephfs_subvolume_all_row_values(self, expected_count=1, timeout=30):
         """
         Return the metric value text from every row in the subvolume table.
 
@@ -165,6 +165,9 @@ class CephFSSubvolumeMetricsCard(BlockAndFile):
         table row.
 
         Args:
+            expected_count (int): Minimum number of value cells to wait
+                for before reading (default 1). Guards against reading
+                a partially rendered table after a metric switch.
             timeout (int): Maximum seconds to wait for the value cells.
 
         Returns:
@@ -173,7 +176,14 @@ class CephFSSubvolumeMetricsCard(BlockAndFile):
         """
         metric = self.get_cephfs_subvolume_metric_toggle_text()
         loc = format_locator(self.all_row_values_loc, metric)
-        self.wait_for_element_to_be_present(loc, timeout=timeout)
+        for elements in TimeoutSampler(
+            timeout=timeout,
+            sleep=2,
+            func=self.get_elements,
+            locator=loc,
+        ):
+            if len(elements) >= expected_count:
+                break
         elements = self.get_elements(loc)
         values = [el.text.strip() for el in elements]
         logger.info("All row values for metric '%s': %s", metric, values)
@@ -199,7 +209,7 @@ class CephFSSubvolumeMetricsCard(BlockAndFile):
 
     def wait_for_row_count(self, expected_count, timeout=360, sleep=20):
         """
-        Wait until the subvolume table displays exactly ``expected_count`` rows.
+        Wait until the subvolume table displays at least ``expected_count`` rows.
 
         Args:
             expected_count (int): Target row count.
