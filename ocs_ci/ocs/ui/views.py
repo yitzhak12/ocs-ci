@@ -2578,8 +2578,7 @@ validation_4_22 = {
     ),
     "cephfs_subvolume_table_rows": (
         f"//div[contains(text(),'{constants.CEPHFS_SUBVOLUME_METRICS_CARD_TITLE}')]"
-        "/following::div[contains(@class,'odf-loading-box')]"
-        "//table/tbody/tr",
+        "/following::table[1]/tbody/tr",
         By.XPATH,
     ),
     "cephfs_subvolume_help_button": (
@@ -2594,23 +2593,20 @@ validation_4_22 = {
     ),
     "cephfs_subvolume_col_headers": (
         f"//div[contains(text(),'{constants.CEPHFS_SUBVOLUME_METRICS_CARD_TITLE}')]"
-        "/following::div[contains(@class,'odf-loading-box')]"
-        "//table/thead/tr/th",
+        "/following::table[1]/thead/tr/th",
         By.XPATH,
     ),
     # {0} = active metric label, e.g. 'Total IOPS'
     "cephfs_subvolume_first_row_value": (
         f"//div[contains(text(),'{constants.CEPHFS_SUBVOLUME_METRICS_CARD_TITLE}')]"
-        "/following::div[contains(@class,'odf-loading-box')]"
-        "//table/tbody/tr[1]/td[@data-label='{0}']",
+        "/following::table[1]/tbody/tr[1]/td[@data-label='{0}']",
         By.XPATH,
     ),
     # Name cell uses <button aria-label="Show related pods">, not an <a> tag.
     # Clicking it opens the "Related pods" popover.
     "cephfs_subvolume_first_row_name_button": (
         f"//div[contains(text(),'{constants.CEPHFS_SUBVOLUME_METRICS_CARD_TITLE}')]"
-        "/following::div[contains(@class,'odf-loading-box')]"
-        "//table/tbody/tr[1]//button[@aria-label='Show related pods']",
+        "/following::table[1]/tbody/tr[1]//button[@aria-label='Show related pods']",
         By.XPATH,
     ),
     # "Related pods" popover: anchored by role=dialog + header text.
@@ -2645,16 +2641,14 @@ validation_4_22 = {
     # The Namespace td carries data-label='Namespace' and contains an <a>.
     "cephfs_subvolume_row_by_namespace": (
         f"//div[contains(text(),'{constants.CEPHFS_SUBVOLUME_METRICS_CARD_TITLE}')]"
-        "/following::div[contains(@class,'odf-loading-box')]"
-        "//table/tbody/tr"
+        "/following::table[1]/tbody/tr"
         "[.//td[@data-label='Namespace']//a[normalize-space(text())='{0}']]",
         By.XPATH,
     ),
     # {0} = namespace, {1} = active metric label, e.g. 'Total IOPS'
     "cephfs_subvolume_value_by_namespace": (
         f"//div[contains(text(),'{constants.CEPHFS_SUBVOLUME_METRICS_CARD_TITLE}')]"
-        "/following::div[contains(@class,'odf-loading-box')]"
-        "//table/tbody/tr"
+        "/following::table[1]/tbody/tr"
         "[.//td[@data-label='Namespace']//a[normalize-space(text())='{0}']]"
         "/td[@data-label='{1}']",
         By.XPATH,
@@ -2662,8 +2656,7 @@ validation_4_22 = {
     # {0} = active metric label, e.g. 'Total IOPS'
     "cephfs_subvolume_all_row_values": (
         f"//div[contains(text(),'{constants.CEPHFS_SUBVOLUME_METRICS_CARD_TITLE}')]"
-        "/following::div[contains(@class,'odf-loading-box')]"
-        "//table/tbody/tr/td[@data-label='{0}']",
+        "/following::table[1]/tbody/tr/td[@data-label='{0}']",
         By.XPATH,
     ),
 }

@@ -330,6 +330,9 @@ class TestCephFSSubvolumeTop10Ranking(ManageTest):
         workloads = create_cephfs_subvolume_workloads(
             count=constants.CEPHFS_SUBVOLUME_TOP_10_WORKLOAD_COUNT,
             project_name_prefix="cephfs-top10-test",
+            pvc_size="1Gi",
+            fio_size="1GB",
+            fio_runtime=900,
         )
         projects = [project_obj for project_obj, _, _ in workloads]
 
@@ -388,14 +391,15 @@ class TestCephFSSubvolumeTop10Ranking(ManageTest):
             ),
         ],
     )
-    def test_cephfs_subvolume_top_10_ranking(self, metric):
+    def test_cephfs_subvolume_top_10_ranking(self, metric, threading_lock):
         """
         Switch to the given metric and verify the table shows at most
-        10 rows with correctly-formatted values.
+        10 rows with correctly-formatted values that match Prometheus.
 
         Steps (class-scoped setup, runs once for all parametrized cases):
         1. Create 12 CephFS subvolume workloads (namespace + PVC + FIO
-           each) so the cluster has more subvolumes than the UI cap.
+           each) so the cluster has more subvolumes than the UI
+           cap of 10 rows.
         2. Navigate to Storage Cluster > Block and File tab.
         3. Verify CephFS subvolume metrics card is visible.
         4. Wait for the table to show exactly 10 rows (max 6 minutes).
@@ -406,6 +410,8 @@ class TestCephFSSubvolumeTop10Ranking(ManageTest):
         6. Verify at most 10 rows are displayed.
         7. Verify every displayed row carries a non-empty value with the
            expected unit suffix for the selected metric.
+        8. Query Prometheus for the same metric and verify UI values
+           match CLI values (positional comparison, sorted descending).
         """
         subvolume_metrics_card = CephFSSubvolumeMetricsCard()
 
@@ -447,3 +453,13 @@ class TestCephFSSubvolumeTop10Ranking(ManageTest):
                 f"expected unit '{expected_unit}' "
                 f"for metric '{metric}'"
             )
+
+        logger.test_step(
+            "Verify UI values match Prometheus for metric '%s'",
+            metric,
+        )
+        subvolume_metrics_card.verify_ui_values_match_prometheus(
+            metric=metric,
+            ui_values=all_values,
+            threading_lock=threading_lock,
+        )
