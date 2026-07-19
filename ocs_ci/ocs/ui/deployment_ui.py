@@ -19,6 +19,7 @@ from ocs_ci.ocs.node import (
     label_nodes,
 )
 from ocs_ci.utility.operators import LocalStorageOperator
+from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
 
 logger = logging.getLogger(__name__)
@@ -485,12 +486,64 @@ class DeploymentUI(PageNavigator):
         if self.ocp_version_semantic >= version.VERSION_4_7:
             logger.info("Next on step 'Select capacity and nodes'")
             self.do_click(locator=self.dep_loc["next"], enable_screenshot=True)
+            if ocs_version >= version.VERSION_4_22:
+                self.verify_forceful_deployment_option_disabled()
             self.configure_in_transit_encryption()
             self.configure_encryption()
 
         self.configure_data_protection()
 
         self.create_storage_cluster()
+
+    def verify_forceful_deployment_option_disabled(self):
+        """
+        Verify the 'Enable forceful deployment' checkbox is absent.
+
+        Attempts to navigate to the 'Advanced settings' wizard step
+        (if it exists) and then asserts the forceful deployment
+        checkbox is not present. In the non-LSO flow neither the
+        step nor the checkbox should appear.
+
+        Any exception other than finding the checkbox is logged and
+        suppressed so that deployment is not interrupted.
+
+        Raises:
+            ConfigurationError: If the checkbox element is found.
+
+        """
+        logger.info(
+            "Verify 'Enable forceful deployment' checkbox "
+            "is not present in non-LSO deployment flow"
+        )
+        try:
+            self.take_screenshot()
+            if self.check_element_text("Advanced settings"):
+                logger.info("'Advanced settings' step found, clicking it")
+                self.do_click(
+                    locator=(
+                        "//*[contains(text(), 'Advanced settings')]",
+                        By.XPATH,
+                    ),
+                    enable_screenshot=True,
+                )
+            elements = self.get_elements(
+                locator=self.dep_loc["enable_forceful_deployment"]
+            )
+            if elements:
+                raise ConfigurationError(
+                    "'Enable forceful deployment' checkbox should "
+                    "not appear in non-LSO deployment flow"
+                )
+            logger.info(
+                "'Enable forceful deployment' checkbox is not " "present, as expected"
+            )
+        except ConfigurationError:
+            raise
+        except (WebDriverException, OSError):
+            logger.warning(
+                "Could not verify forceful deployment option, " "continuing deployment",
+                exc_info=True,
+            )
 
     def configure_performance(self):
         """
