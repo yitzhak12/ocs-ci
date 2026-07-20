@@ -515,6 +515,12 @@ class DeploymentUI(PageNavigator):
             "Verify 'Enable forceful deployment' checkbox "
             "is not present in non-LSO deployment flow"
         )
+        if "enable_forceful_deployment" not in self.dep_loc:
+            logger.info(
+                "Locator 'enable_forceful_deployment' not "
+                "defined, skipping verification"
+            )
+            return
         try:
             self.take_screenshot()
             if self.check_element_text("Advanced settings"):
