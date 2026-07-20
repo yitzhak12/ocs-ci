@@ -526,10 +526,7 @@ class DeploymentUI(PageNavigator):
             if self.check_element_text("Advanced settings"):
                 logger.info("'Advanced settings' step found, clicking it")
                 self.do_click(
-                    locator=(
-                        "//*[contains(text(), 'Advanced settings')]",
-                        By.XPATH,
-                    ),
+                    locator=self.dep_loc["advanced_settings_step"],
                     enable_screenshot=True,
                 )
             elements = self.get_elements(
