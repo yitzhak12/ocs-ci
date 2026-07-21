@@ -8,7 +8,11 @@ from ocs_ci.ocs.ui.page_objects.page_navigator import PageNavigator
 from ocs_ci.utility.utils import TimeoutSampler
 from ocs_ci.utility import version
 from ocs_ci.ocs.resources import csv
-from ocs_ci.ocs.exceptions import TimeoutExpiredError, ConfigurationError
+from ocs_ci.ocs.exceptions import (
+    TimeoutExpiredError,
+    ConfigurationError,
+    UnexpectedBehaviour,
+)
 from ocs_ci.framework import config
 from ocs_ci.ocs import constants, defaults
 from ocs_ci.ocs.node import (
@@ -508,7 +512,7 @@ class DeploymentUI(PageNavigator):
         suppressed so that deployment is not interrupted.
 
         Raises:
-            ConfigurationError: If the checkbox element is found.
+            UnexpectedBehaviour: If the checkbox element is found.
 
         """
         logger.info(
@@ -533,18 +537,18 @@ class DeploymentUI(PageNavigator):
                 locator=self.dep_loc["enable_forceful_deployment"]
             )
             if elements:
-                raise ConfigurationError(
+                raise UnexpectedBehaviour(
                     "'Enable forceful deployment' checkbox should "
                     "not appear in non-LSO deployment flow"
                 )
             logger.info(
-                "'Enable forceful deployment' checkbox is not " "present, as expected"
+                "'Enable forceful deployment' checkbox is not present, as expected"
             )
-        except ConfigurationError:
+        except UnexpectedBehaviour:
             raise
         except (WebDriverException, OSError):
             logger.warning(
-                "Could not verify forceful deployment option, " "continuing deployment",
+                "Could not verify forceful deployment option, continuing deployment",
                 exc_info=True,
             )
 
