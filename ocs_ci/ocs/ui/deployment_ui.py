@@ -544,8 +544,6 @@ class DeploymentUI(PageNavigator):
             logger.info(
                 "'Enable forceful deployment' checkbox is not present, as expected"
             )
-        except UnexpectedBehaviour:
-            raise
         except (WebDriverException, OSError):
             logger.warning(
                 "Could not verify forceful deployment option, continuing deployment",
