@@ -1,36 +1,31 @@
-import json
 import logging
+import math
 import re
-from urllib.parse import quote
 
 from ocs_ci.ocs import constants
 from ocs_ci.ocs.exceptions import TimeoutExpiredError
-from ocs_ci.ocs.ocp import OCP
 from ocs_ci.ocs.ui.helpers_ui import format_locator
 from ocs_ci.ocs.ui.page_objects.block_and_file import BlockAndFile
+from ocs_ci.utility.prometheus import PrometheusAPI
 from ocs_ci.utility.utils import TimeoutSampler
 
 logger = logging.getLogger(__name__)
 
 
+_PROMQL_TEMPLATE = (
+    "sort_desc("
+    "sum by (pv_name,pvc_namespace,subvolume)"
+    "(odf_cephfs_subvolume_read_{m}_with_pv"
+    " or odf_cephfs_subvolume_write_{m}_with_pv))"
+)
+
 METRIC_PROMQL = {
-    constants.CEPHFS_SUBVOLUME_DEFAULT_METRIC: (
-        "sort_desc("
-        "sum by (pv_name,pvc_namespace,subvolume)"
-        "(odf_cephfs_subvolume_read_iops_with_pv"
-        " or odf_cephfs_subvolume_write_iops_with_pv))"
-    ),
+    constants.CEPHFS_SUBVOLUME_DEFAULT_METRIC: (_PROMQL_TEMPLATE.format(m="iops")),
     constants.CEPHFS_SUBVOLUME_METRIC_LATENCY: (
-        "sort_desc("
-        "sum by (pv_name,pvc_namespace,subvolume)"
-        "(odf_cephfs_subvolume_read_latency_msec_with_pv"
-        " or odf_cephfs_subvolume_write_latency_msec_with_pv))"
+        _PROMQL_TEMPLATE.format(m="latency_msec")
     ),
     constants.CEPHFS_SUBVOLUME_METRIC_THROUGHPUT: (
-        "sort_desc("
-        "sum by (pv_name,pvc_namespace,subvolume)"
-        "(odf_cephfs_subvolume_read_throughput_bps_with_pv"
-        " or odf_cephfs_subvolume_write_throughput_bps_with_pv))"
+        _PROMQL_TEMPLATE.format(m="throughput_bps")
     ),
 }
 
@@ -485,6 +480,7 @@ class CephFSSubvolumeMetricsCard(BlockAndFile):
             float: Raw numeric value in base units.
         """
         multipliers = {
+            "ms": 1e-3,
             "KBps": 1e3,
             "MBps": 1e6,
             "GBps": 1e9,
@@ -498,43 +494,74 @@ class CephFSSubvolumeMetricsCard(BlockAndFile):
         return number
 
     @staticmethod
-    def _query_prometheus_via_exec(promql):
+    def _get_prometheus_top_values(metric, threading_lock):
         """
-        Query Prometheus by exec-ing into the ``prometheus-k8s-0`` pod.
-
-        Uses ``curl localhost:9090`` inside the pod, which bypasses
-        route TLS and token issues on clusters where kubeadmin
-        kubeconfig uses client certificates instead of bearer tokens.
+        Query Prometheus and return the top N values sorted descending.
 
         Args:
-            promql (str): PromQL expression to evaluate.
+            metric (str): Metric label used to look up the PromQL
+                expression in ``METRIC_PROMQL``.
+            threading_lock: Threading lock for PrometheusAPI.
 
         Returns:
-            list[dict]: Prometheus instant-query result entries.
+            list[float]: Top values, capped at
+                ``constants.CEPHFS_SUBVOLUME_MAX_TOP_10_ROWS``.
         """
-        ocp = OCP(
-            kind=constants.POD,
-            namespace=constants.MONITORING_NAMESPACE,
+        promql = METRIC_PROMQL[metric]
+        api = PrometheusAPI(threading_lock=threading_lock)
+        results = api.query(promql)
+        values = sorted(
+            [float(r["value"][1]) for r in results],
+            reverse=True,
         )
-        encoded = quote(promql, safe="")
-        curl_cmd = f"curl -sg 'http://localhost:9090/api/v1/query" f"?query={encoded}'"
-        output = ocp.exec_oc_cmd(
-            command=f'exec prometheus-k8s-0 -- sh -c "{curl_cmd}"',
-            out_yaml_format=False,
-        )
-        data = json.loads(output)
-        return data.get("data", {}).get("result", [])
+        return values[: constants.CEPHFS_SUBVOLUME_MAX_TOP_10_ROWS]
+
+    def _wait_for_nonzero_prometheus_values(
+        self,
+        metric,
+        threading_lock,
+        expected_count,
+        timeout=360,
+        sleep=30,
+    ):
+        """
+        Poll Prometheus until all top values for ``metric`` are > 0.
+
+        Args:
+            metric (str): Metric label.
+            threading_lock: Threading lock for PrometheusAPI.
+            expected_count (int): Number of values expected.
+            timeout (int): Maximum seconds to wait.
+            sleep (int): Seconds between polls.
+
+        Returns:
+            list[float]: Prometheus values once all are non-zero.
+
+        Raises:
+            TimeoutExpiredError: If values do not become non-zero
+                within ``timeout``.
+        """
+        result = None
+        for values in TimeoutSampler(
+            timeout=timeout,
+            sleep=sleep,
+            func=self._get_prometheus_top_values,
+            metric=metric,
+            threading_lock=threading_lock,
+        ):
+            if len(values) >= expected_count and all(
+                v > 0 for v in values[:expected_count]
+            ):
+                result = values[:expected_count]
+                break
+        return result
 
     def verify_ui_values_match_prometheus(self, metric, ui_values, threading_lock):
         """
         Compare UI table values against Prometheus for the given metric.
 
-        Queries Prometheus for the same PromQL the ODF console uses,
-        sorts results descending, and compares positionally against the
-        UI values list (both are sorted by highest value first).
-
-        For IOPS and Latency the Prometheus value must be > 0.
-        For Throughput 0 is acceptable (FIO bypasses MDS).
+        Polls Prometheus until all values are > 0, then re-reads the
+        UI table so both snapshots are fresh before comparing.
 
         Args:
             metric (str): Active metric label, e.g.
@@ -542,59 +569,33 @@ class CephFSSubvolumeMetricsCard(BlockAndFile):
             ui_values (list[str]): Values collected from the UI table,
                 e.g. ``['13 IOPS', '7 IOPS']``.
             threading_lock: Session-scoped threading lock for
-                PrometheusAPI (unused, kept for interface compatibility).
+                PrometheusAPI.
 
         Raises:
-            AssertionError: If any value is unexpectedly 0 or if a
-                UI value does not match its Prometheus counterpart
-                within the allowed tolerance.
+            AssertionError: If a UI value does not match its
+                Prometheus counterpart within the allowed tolerance.
         """
-        promql = METRIC_PROMQL[metric]
-        logger.info(
-            "Querying Prometheus for metric '%s': %s",
+        prom_values = self._wait_for_nonzero_prometheus_values(
             metric,
-            promql,
-        )
-        results = self._query_prometheus_via_exec(promql)
-        cli_values = sorted(
-            [float(r["value"][1]) for r in results],
-            reverse=True,
-        )
-        top_cli = cli_values[: constants.CEPHFS_SUBVOLUME_MAX_TOP_10_ROWS]
-        logger.info(
-            "Prometheus top %d values for '%s': %s",
-            len(top_cli),
-            metric,
-            top_cli,
+            threading_lock,
+            expected_count=len(ui_values),
         )
 
-        is_throughput = metric == constants.CEPHFS_SUBVOLUME_METRIC_THROUGHPUT
+        logger.info("Prometheus values for '%s': %s", metric, prom_values)
 
-        assert len(ui_values) == len(top_cli), (
+        ui_values = self.get_cephfs_subvolume_all_row_values(
+            expected_count=len(prom_values),
+        )
+
+        assert len(ui_values) == len(prom_values), (
             f"Row count mismatch for '{metric}': "
             f"UI has {len(ui_values)}, "
-            f"Prometheus has {len(top_cli)}"
+            f"Prometheus has {len(prom_values)}"
         )
 
-        for idx, (ui_str, cli_val) in enumerate(zip(ui_values, top_cli)):
+        for idx, (ui_str, prom_val) in enumerate(zip(ui_values, prom_values)):
             ui_val = self._parse_ui_metric_value(ui_str)
-            if not is_throughput:
-                assert cli_val > 0, (
-                    f"Prometheus value for '{metric}' row {idx} " f"is 0, expected > 0"
-                )
-            delta = abs(ui_val - cli_val)
-            tolerance = max(1.0, cli_val * 0.05)
-            logger.info(
-                "Row %d '%s': UI=%.2f, CLI=%.2f, " "delta=%.2f (tol=%.2f)",
-                idx,
-                metric,
-                ui_val,
-                cli_val,
-                delta,
-                tolerance,
-            )
-            assert delta <= tolerance, (
+            assert math.isclose(ui_val, prom_val, rel_tol=0.05, abs_tol=1.0), (
                 f"Row {idx} '{metric}' mismatch: "
-                f"UI={ui_str} ({ui_val}), "
-                f"CLI={cli_val}, delta={delta}"
+                f"UI={ui_str} ({ui_val}), Prometheus={prom_val}"
             )
