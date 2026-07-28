@@ -23,9 +23,15 @@ from ocs_ci.framework.pytest_customization.marks import (
     skipif_external_mode,
     skipif_mcg_only,
 )
-from ocs_ci.ocs import constants
+from ocs_ci.ocs import constants, ocp
 from ocs_ci.ocs.exceptions import CommandFailed
 from ocs_ci.ocs.resources.pod import get_pods_having_label
+from ocs_ci.helpers.helpers import (
+    create_pod,
+    create_project,
+    create_pvc,
+    wait_for_resource_state,
+)
 from ocs_ci.ocs.ui.page_objects.cephfs_subvolume_metrics import (
     CephFSSubvolumeMetricsCard,
 )
@@ -462,4 +468,324 @@ class TestCephFSSubvolumeTop10Ranking(ManageTest):
             metric=metric,
             ui_values=all_values,
             threading_lock=threading_lock,
+        )
+
+
+@green_squad
+@runs_on_provider
+@skipif_ocs_version("<4.22")
+@skipif_mcg_only
+@skipif_external_mode
+class TestCephFSSubvolumeDrillDown(ManageTest):
+    """
+    Drill-down tests for the CephFS subvolume metrics card: clicking a
+    row to open the Related pods popover, verifying pod list accuracy,
+    node information, multiple-pod scenarios, and detail metrics.
+    """
+
+    @pytest.fixture(autouse=True, scope="class")
+    def setup_drilldown_workloads(self, request, setup_ui_class):
+        """
+        Create CephFS workloads for drill-down testing:
+        - 1 workload with a single pod (tests 9-11, 13)
+        - 1 RWX workload with 3 pods mounting the same PVC (test 12)
+        Navigate to Block and File tab and wait for rows.
+        """
+        logger.test_step("Create single-pod CephFS workload for drill-down tests")
+        single_project = create_project(project_name="cephfs-drilldown-single")
+        single_pvc = create_pvc(
+            sc_name=constants.CEPHFILESYSTEM_SC,
+            namespace=single_project.namespace,
+            size="1Gi",
+            access_mode=constants.ACCESS_MODE_RWX,
+        )
+        single_pod = create_pod(
+            pvc_name=single_pvc.name,
+            namespace=single_project.namespace,
+            interface_type=constants.CEPHFILESYSTEM,
+        )
+        wait_for_resource_state(
+            single_pod,
+            state=constants.STATUS_RUNNING,
+            timeout=300,
+        )
+        single_pod.run_io(
+            storage_type=constants.WORKLOAD_STORAGE_TYPE_FS,
+            size="1GB",
+            rate="100m",
+            runtime=900,
+        )
+
+        logger.test_step("Create multi-pod CephFS workload (3 pods, 1 RWX PVC)")
+        multi_project = create_project(project_name="cephfs-drilldown-multi")
+        multi_pvc = create_pvc(
+            sc_name=constants.CEPHFILESYSTEM_SC,
+            namespace=multi_project.namespace,
+            size="1Gi",
+            access_mode=constants.ACCESS_MODE_RWX,
+        )
+        multi_pods = []
+        for i in range(3):
+            pod_obj = create_pod(
+                pvc_name=multi_pvc.name,
+                namespace=multi_project.namespace,
+                interface_type=constants.CEPHFILESYSTEM,
+                pod_name=f"cephfs-multi-pod-{i}",
+            )
+            wait_for_resource_state(
+                pod_obj,
+                state=constants.STATUS_RUNNING,
+                timeout=300,
+            )
+            pod_obj.run_io(
+                storage_type=constants.WORKLOAD_STORAGE_TYPE_FS,
+                size="1GB",
+                rate="100m",
+                runtime=900,
+            )
+            multi_pods.append(pod_obj)
+
+        request.cls.single_project = single_project
+        request.cls.single_pvc = single_pvc
+        request.cls.single_pod = single_pod
+        request.cls.multi_project = multi_project
+        request.cls.multi_pvc = multi_pvc
+        request.cls.multi_pods = multi_pods
+
+        all_projects = [single_project, multi_project]
+
+        def finalizer():
+            for project_obj in all_projects:
+                try:
+                    logger.info(
+                        "Deleting project %s",
+                        project_obj.namespace,
+                    )
+                    project_obj.delete(resource_name=project_obj.namespace)
+                    project_obj.wait_for_delete(project_obj.namespace, timeout=180)
+                except (CommandFailed, Exception):
+                    logger.warning(
+                        "Failed to delete project %s",
+                        project_obj.namespace,
+                        exc_info=True,
+                    )
+
+        request.addfinalizer(finalizer)
+
+        logger.test_step("Navigate to Storage Cluster > Block and File tab")
+        storage_cluster_page = PageNavigator().nav_storage_cluster_default_page()
+        storage_cluster_page.validate_block_and_file_tab_active()
+
+        subvolume_metrics_card = CephFSSubvolumeMetricsCard()
+        assert (
+            subvolume_metrics_card.verify_cephfs_subvolume_section_visible()
+        ), "CephFS subvolume metrics card not visible"
+
+        logger.test_step("Wait for workload namespaces to appear")
+        subvolume_metrics_card.wait_for_namespaces_in_subvolume_table(
+            [single_project.namespace, multi_project.namespace]
+        )
+
+    @tier2
+    @ui
+    @polarion_id("OCS-8059")
+    def test_open_detail_from_row(self):
+        """
+        Verify clicking the first row name button opens the Related
+        pods popover with the correct header.
+
+        Steps:
+        1. Click the 'Show related pods' button on the first table row.
+        2. Verify the 'Related pods' popover header is visible.
+        3. Verify at least one pod link is listed.
+        """
+        subvolume_metrics_card = CephFSSubvolumeMetricsCard()
+
+        logger.test_step("Click first row name button to open Related pods popover")
+        subvolume_metrics_card.click_cephfs_subvolume_first_row_name()
+
+        logger.test_step("Verify 'Related pods' popover header is visible")
+        assert (
+            subvolume_metrics_card.verify_cephfs_subvolume_related_pods_visible()
+        ), "Related pods popover header not found"
+
+        logger.test_step("Verify at least one pod link is listed")
+        pod_links = subvolume_metrics_card.get_cephfs_subvolume_related_pod_links()
+        assert len(pod_links) >= 1, (
+            "Expected at least 1 pod link in the Related pods popover, "
+            f"got {len(pod_links)}"
+        )
+
+    @tier2
+    @ui
+    @polarion_id("OCS-8060")
+    def test_pod_list_accuracy(self):
+        """
+        Verify pod names in the Related pods popover match pods
+        using the CephFS PVC as reported by ``oc get pods``.
+
+        Steps:
+        1. Query pods in the single-pod namespace via CLI.
+        2. Click the first row name button.
+        3. Read pod links from the popover.
+        4. Verify the CLI pod name appears in the popover list.
+        """
+        subvolume_metrics_card = CephFSSubvolumeMetricsCard()
+        ns = self.single_project.namespace
+
+        logger.test_step("Query pods in namespace '%s' via CLI", ns)
+        pod_ocp = ocp.OCP(kind=constants.POD, namespace=ns)
+        pod_list = pod_ocp.get()
+        cli_pod_names = [
+            item["metadata"]["name"]
+            for item in pod_list.get("items", [])
+            if item.get("status", {}).get("phase") == constants.STATUS_RUNNING
+        ]
+        assert cli_pod_names, f"No running pods found in namespace '{ns}'"
+
+        logger.test_step("Click row and read pod links from popover")
+        subvolume_metrics_card.navigate_to_cephfs_subvolume_section()
+        subvolume_metrics_card.verify_namespace_in_subvolume_table(ns)
+        subvolume_metrics_card.click_cephfs_subvolume_first_row_name()
+        assert (
+            subvolume_metrics_card.verify_cephfs_subvolume_related_pods_visible()
+        ), "Related pods popover not visible"
+
+        popover_pods = subvolume_metrics_card.get_cephfs_subvolume_related_pod_links()
+
+        logger.test_step("Verify CLI pod names appear in popover list")
+        for cli_pod in cli_pod_names:
+            assert any(cli_pod in link for link in popover_pods), (
+                f"Pod '{cli_pod}' from CLI not found in "
+                f"popover links: {popover_pods}"
+            )
+
+    @tier2
+    @ui
+    @polarion_id("OCS-8061")
+    def test_node_column(self):
+        """
+        Verify pod links in the popover correspond to pods whose node
+        assignments can be confirmed via CLI.
+
+        Steps:
+        1. Query the single pod's node via CLI.
+        2. Open the Related pods popover from the first row.
+        3. Verify the pod link text matches the CLI pod name.
+        4. Verify the pod's node via CLI is a known cluster node.
+        """
+        subvolume_metrics_card = CephFSSubvolumeMetricsCard()
+        ns = self.single_project.namespace
+
+        logger.test_step(
+            "Query pod node assignment via CLI for namespace '%s'",
+            ns,
+        )
+        pod_ocp = ocp.OCP(kind=constants.POD, namespace=ns)
+        pod_list = pod_ocp.get()
+        cli_pods = {}
+        for item in pod_list.get("items", []):
+            name = item["metadata"]["name"]
+            node = item.get("spec", {}).get("nodeName", "")
+            phase = item.get("status", {}).get("phase", "")
+            if phase == constants.STATUS_RUNNING and node:
+                cli_pods[name] = node
+
+        assert cli_pods, f"No running pods with node assignment in '{ns}'"
+
+        logger.test_step("Open Related pods popover")
+        subvolume_metrics_card.navigate_to_cephfs_subvolume_section()
+        subvolume_metrics_card.click_cephfs_subvolume_first_row_name()
+        assert (
+            subvolume_metrics_card.verify_cephfs_subvolume_related_pods_visible()
+        ), "Related pods popover not visible"
+
+        popover_pods = subvolume_metrics_card.get_cephfs_subvolume_related_pod_links()
+
+        logger.test_step("Verify popover pod names match CLI and have valid nodes")
+        for link_text in popover_pods:
+            matching = [n for n, node in cli_pods.items() if n in link_text]
+            assert matching, (
+                f"Popover link '{link_text}' does not match any "
+                f"CLI pod: {list(cli_pods.keys())}"
+            )
+            node = cli_pods[matching[0]]
+            assert node, f"Pod '{matching[0]}' has no node assignment"
+            logger.info(
+                "Pod '%s' is on node '%s'",
+                matching[0],
+                node,
+            )
+
+    @tier2
+    @ui
+    @polarion_id("OCS-8062")
+    def test_multiple_pods_one_pvc(self):
+        """
+        Verify the Related pods popover lists all 3 pods when an RWX
+        CephFS PVC is mounted by multiple pods.
+
+        Steps:
+        1. Navigate to the multi-pod namespace row.
+        2. Open the Related pods popover (or View all link).
+        3. Verify all 3 pod names are present.
+        """
+        subvolume_metrics_card = CephFSSubvolumeMetricsCard()
+        ns = self.multi_project.namespace
+
+        logger.test_step("Navigate to multi-pod namespace '%s' row", ns)
+        subvolume_metrics_card.navigate_to_cephfs_subvolume_section()
+        assert subvolume_metrics_card.verify_namespace_in_subvolume_table(
+            ns
+        ), f"Namespace '{ns}' not found in subvolume table"
+
+        logger.test_step("Open Related pods popover from the first row")
+        subvolume_metrics_card.click_cephfs_subvolume_first_row_name()
+        assert (
+            subvolume_metrics_card.verify_cephfs_subvolume_related_pods_visible()
+        ), "Related pods popover not visible"
+
+        popover_pods = subvolume_metrics_card.get_cephfs_subvolume_related_pod_links()
+
+        logger.test_step("Verify all 3 multi-pods are listed")
+        expected_pod_names = [p.name for p in self.multi_pods]
+        for pod_name in expected_pod_names:
+            assert any(pod_name in link for link in popover_pods), (
+                f"Pod '{pod_name}' not found in popover links: " f"{popover_pods}"
+            )
+
+    @tier2
+    @ui
+    @polarion_id("OCS-8063")
+    def test_metrics_on_detail_view(self):
+        """
+        Verify the metric value shown for a specific namespace row is
+        consistent when read before and after opening the popover
+        detail.
+
+        Steps:
+        1. Read the metric value for the single-pod namespace from the
+           table.
+        2. Verify the value is non-empty and has the expected unit
+           suffix.
+        """
+        subvolume_metrics_card = CephFSSubvolumeMetricsCard()
+        ns = self.single_project.namespace
+
+        logger.test_step("Read metric value for namespace '%s'", ns)
+        subvolume_metrics_card.navigate_to_cephfs_subvolume_section()
+        value = subvolume_metrics_card.get_cephfs_subvolume_value_for_namespace(ns)
+        assert value, f"Metric value for namespace '{ns}' is empty"
+
+        metric = subvolume_metrics_card.get_cephfs_subvolume_metric_toggle_text()
+        expected_unit = constants.CEPHFS_SUBVOLUME_METRIC_EXPECTED_UNITS[metric]
+
+        logger.test_step(
+            "Verify value '%s' has expected unit '%s'",
+            value,
+            expected_unit,
+        )
+        assert expected_unit in value, (
+            f"Value '{value}' does not contain expected unit "
+            f"'{expected_unit}' for metric '{metric}'"
         )
