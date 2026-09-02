@@ -13,17 +13,19 @@ spec:
       restartPolicy: Never
       containers:
       - name: filler
-        image: quay.io/ocsci/busybox:latest
+        # fedora:fio provides GNU dd and openssl (needed for incompressible fill).
+        image: quay.io/ocsci/fedora:fio
         imagePullPolicy: IfNotPresent
         command:
           - sh
           - -c
           - |
-            echo "Filling PVC with zeros..."
-            dd if=${INPUT_FILE:-/dev/zero} of=/mnt/fill/testfile bs=${BLOCK_SIZE:-1M}
+            echo "Filling PVC with incompressible data..."
+            openssl enc -aes-128-ctr -nosalt -pass pass:ocs-ci-fill -in /dev/zero 2>/dev/null \
+              | dd of=/mnt/fill/testfile bs=${BLOCK_SIZE:-4M} oflag=direct
         env:
         - name: BLOCK_SIZE
-          value: "1M"
+          value: "4M"
         resources:
           requests:
             cpu: "100m"
